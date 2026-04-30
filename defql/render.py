@@ -77,10 +77,9 @@ def to_mermaid(table_spec: TableSpec) -> str:
     ctx = build_context(table_spec)
     target = table_spec.name
     lines = ["graph TD"]
-    link_idx = 0
-    dotted_links: list[int] = []
 
     subgraphs: dict[tuple, tuple[str, list[TableSpec], str]] = {}
+    node_to_subgraph: dict[str, str] = {}
     parent_styles: set[str] = set()
 
     for name in ctx.topological_order(target):
@@ -88,8 +87,11 @@ def to_mermaid(table_spec: TableSpec) -> str:
         label = _node_label(spec)
         for dep in spec.deps:
             dep_label = _node_label(dep)
-            lines.append(f'    {dep.name}["{dep_label}"] --> {name}["{label}"]')
-            link_idx += 1
+            from_id = node_to_subgraph.get(dep.name)
+            if from_id:
+                lines.append(f'    {from_id} --> {name}["{label}"]')
+            else:
+                lines.append(f'    {dep.name}["{dep_label}"] --> {name}["{label}"]')
         if spec.ctes:
             all_ctes = flatten_ctes(spec.ctes)
             cte_names = sorted(c.name for c in all_ctes)
@@ -106,15 +108,14 @@ def to_mermaid(table_spec: TableSpec) -> str:
             else:
                 subgraph_id = subgraphs[key][0]
 
+            node_to_subgraph[name] = subgraph_id
             parent_styles.add(name)
-            dotted_links.append(link_idx)
-            lines.append(f"    {subgraph_id} -.- {name}")
-            link_idx += 1
+            lines.append(f'    {name}["{label}"] --> {subgraph_id}')
 
     highlighted = COLORS["highlighted_border"]
     for subgraph_id, all_ctes, sub_label in subgraphs.values():
         cte_names = {c.name for c in all_ctes}
-        lines.append(f'    subgraph {subgraph_id}["CTEs of **{sub_label}**"]')
+        lines.append(f'    subgraph {subgraph_id}["CTEs of <b>{sub_label}</b>"]')
         for cte in all_ctes:
             cte_id = f"{subgraph_id}__{cte.name}"
             lines.append(f'        {cte_id}["{cte.name}"]')
@@ -122,14 +123,10 @@ def to_mermaid(table_spec: TableSpec) -> str:
             for ref in extract_table_names(cte.sql) & cte_names:
                 if ref != cte.name:
                     lines.append(f"        {subgraph_id}__{ref} --> {subgraph_id}__{cte.name}")
-                    link_idx += 1
         lines.append("    end")
         lines.append(f"    style {subgraph_id} stroke:{highlighted},stroke-width:2px,stroke-dasharray:5 3")
         for cte in all_ctes:
             lines.append(f"    style {subgraph_id}__{cte.name} stroke:{highlighted},stroke-width:2px")
-
-    for i in dotted_links:
-        lines.append(f"    linkStyle {i} stroke:{highlighted},stroke-dasharray:5 3,stroke-width:2px")
 
     for name in parent_styles:
         lines.append(f"    style {name} stroke-width:2px")

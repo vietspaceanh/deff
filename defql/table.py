@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import inspect
 
-from .base import REGISTRY, SESSION, TableSpec, clean_sql, extract_table_names, sanitize_alias
+from .base import TableSpec, clean_sql, extract_table_names, sanitize_alias
 from .context import Context, build_context
 from .runner import Runner
 from .render import to_mermaid
