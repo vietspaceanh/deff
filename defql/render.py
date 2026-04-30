@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .base import REGISTRY, TableSpec, TableNode, extract_table_names, flatten_ctes
+from .base import REGISTRY, TableSpec, extract_table_names, flatten_ctes, collect_cte_deps
 from .context import build_context
 
 N_ROWS = 200
@@ -14,6 +14,7 @@ COLORS = {
     "border": "#45475a",
     "default": "#555555",
     "default_bg": "#eeeeee",
+    "highlighted_border": "#7190f6b0",
 }
 NUMERIC = ("INTEGER", "BIGINT", "HUGEINT", "SMALLINT", "TINYINT", "FLOAT", "DOUBLE", "DECIMAL")
 TEMPORAL = ("DATE", "TIMESTAMP", "TIMESTAMP WITH TIME ZONE", "TIME", "INTERVAL")
@@ -51,13 +52,13 @@ def result_to_html(cols, types, rows, truncated) -> str:
     return html
 
 
-def _node_label(node: TableNode) -> str:
-    parts = node.spec.func_name.split("__", 1)
+def _node_label(spec: TableSpec) -> str:
+    parts = spec.func_name.split("__", 1)
     display = f"{parts[0]}.{parts[1]}" if len(parts) == 2 else parts[0]
-    if not node.spec.args:
+    if not spec.args:
         return display
     named = []
-    for k, v in node.spec.args.items():
+    for k, v in spec.args.items():
         if hasattr(v, "name"):
             if v.name in REGISTRY:
                 p = v.name.split("__", 1)
@@ -66,9 +67,10 @@ def _node_label(node: TableNode) -> str:
                 val = v.name
         else:
             val = str(v).replace("'", "")
-        named.append(f"{k}=**{val}**")
-    args = ", ".join(named)
-    return f"`**{display}**\n{args}`"
+        named.append(f"<b>{k}</b>: {val}")
+    args = "\n".join(named)
+    formatted_args = f"<div style='text-align:left'><small><pre>{args}</pre></small></div>"
+    return f"`**{display}**\n{formatted_args}`"
 
 
 def to_mermaid(table_spec: TableSpec) -> str:
@@ -78,24 +80,24 @@ def to_mermaid(table_spec: TableSpec) -> str:
     link_idx = 0
     dotted_links: list[int] = []
 
-    subgraphs: dict[tuple, tuple[str, list[TableNode], str]] = {}
+    subgraphs: dict[tuple, tuple[str, list[TableSpec], str]] = {}
     parent_styles: set[str] = set()
 
     for name in ctx.topological_order(target):
-        node = ctx.nodes[name]
-        label = _node_label(node)
-        for dep in node.deps:
-            dep_label = _node_label(ctx.nodes[dep])
-            lines.append(f'    {dep}["{dep_label}"] --> {name}["{label}"]')
+        spec = ctx.nodes[name]
+        label = _node_label(spec)
+        for dep in spec.deps:
+            dep_label = _node_label(dep)
+            lines.append(f'    {dep.name}["{dep_label}"] --> {name}["{label}"]')
             link_idx += 1
-        if node.ctes:
-            all_ctes = flatten_ctes(node.ctes)
-            cte_names = sorted(c.spec.name for c in all_ctes)
-            key = (node.spec.func_name, tuple(cte_names))
+        if spec.ctes:
+            all_ctes = flatten_ctes(spec.ctes)
+            cte_names = sorted(c.name for c in all_ctes)
+            key = (spec.func_name, tuple(cte_names))
 
-            sub_label = _node_label(node)
+            sub_label = _node_label(spec)
             if sub_label.startswith("`"):
-                parts = node.spec.func_name.split("__", 1)
+                parts = spec.func_name.split("__", 1)
                 sub_label = f"{parts[0]}.{parts[1]}" if len(parts) == 2 else parts[0]
 
             if key not in subgraphs:
@@ -109,26 +111,27 @@ def to_mermaid(table_spec: TableSpec) -> str:
             lines.append(f"    {subgraph_id} -.- {name}")
             link_idx += 1
 
+    highlighted = COLORS["highlighted_border"]
     for subgraph_id, all_ctes, sub_label in subgraphs.values():
-        cte_names = {c.spec.name for c in all_ctes}
-        lines.append(f'    subgraph {subgraph_id}["{sub_label} CTEs"]')
+        cte_names = {c.name for c in all_ctes}
+        lines.append(f'    subgraph {subgraph_id}["CTEs of **{sub_label}**"]')
         for cte in all_ctes:
-            cte_id = f"{subgraph_id}__{cte.spec.name}"
-            lines.append(f'        {cte_id}["{cte.spec.name}"]')
+            cte_id = f"{subgraph_id}__{cte.name}"
+            lines.append(f'        {cte_id}["{cte.name}"]')
         for cte in all_ctes:
-            for ref in extract_table_names(cte.spec.sql) & cte_names:
-                if ref != cte.spec.name:
-                    lines.append(f"        {subgraph_id}__{ref} --> {subgraph_id}__{cte.spec.name}")
+            for ref in extract_table_names(cte.sql) & cte_names:
+                if ref != cte.name:
+                    lines.append(f"        {subgraph_id}__{ref} --> {subgraph_id}__{cte.name}")
                     link_idx += 1
         lines.append("    end")
-        lines.append(f"    style {subgraph_id} stroke:#90caf9,stroke-width:2px,stroke-dasharray:5 3")
+        lines.append(f"    style {subgraph_id} stroke:{highlighted},stroke-width:2px,stroke-dasharray:5 3")
         for cte in all_ctes:
-            lines.append(f"    style {subgraph_id}__{cte.spec.name} stroke:#90caf9,stroke-width:2px")
+            lines.append(f"    style {subgraph_id}__{cte.name} stroke:{highlighted},stroke-width:2px")
 
     for i in dotted_links:
-        lines.append(f"    linkStyle {i} stroke:#90caf9,stroke-dasharray:5 3,stroke-width:2px")
+        lines.append(f"    linkStyle {i} stroke:{highlighted},stroke-dasharray:5 3,stroke-width:2px")
 
     for name in parent_styles:
-        lines.append(f"    style {name} stroke:#90caf9,stroke-width:2px")
+        lines.append(f"    style {name} stroke-width:2px")
 
     return "\n".join(lines)

@@ -22,13 +22,6 @@ class TableSpec:
     is_cte: bool = False
 
 
-@dataclass
-class TableNode:
-    spec: TableSpec
-    deps: list[str] = field(default_factory=list)
-    ctes: list[TableNode] = field(default_factory=list)
-
-
 def clean_sql(sql: str) -> str:
     lines = sql.strip().split("\n")
     if lines and lines[0].strip().startswith("--sql"):
@@ -59,23 +52,23 @@ def sanitize_alias(func_name: str, args: dict) -> str:
     return f"{func_name}__{sanitized}"
 
 
-def flatten_ctes(ctes: list[TableNode]) -> list[TableNode]:
+def flatten_ctes(ctes: list[TableSpec]) -> list[TableSpec]:
     seen: set[str] = set()
-    result: list[TableNode] = []
+    result: list[TableSpec] = []
     for cte in ctes:
         for child in flatten_ctes(cte.ctes):
-            if child.spec.name not in seen:
-                seen.add(child.spec.name)
+            if child.name not in seen:
+                seen.add(child.name)
                 result.append(child)
-        if cte.spec.name not in seen:
-            seen.add(cte.spec.name)
+        if cte.name not in seen:
+            seen.add(cte.name)
             result.append(cte)
     return result
 
 
-def collect_cte_deps(ctes: list[TableNode]) -> set[str]:
+def collect_cte_deps(ctes: list[TableSpec]) -> set[str]:
     result: set[str] = set()
     for cte in ctes:
-        result.update(cte.deps)
+        result.update(d.name for d in cte.deps)
         result.update(collect_cte_deps(cte.ctes))
     return result

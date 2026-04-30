@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import inspect
 
-from .base import TableSpec, sanitize_alias, clean_sql, extract_table_names
-from .context import build_context, Context
-from .render import to_mermaid
+from .base import REGISTRY, SESSION, TableSpec, clean_sql, extract_table_names, sanitize_alias
+from .context import Context, build_context
 from .runner import Runner
+from .render import to_mermaid
 
 
 class Table:
@@ -141,6 +143,7 @@ def sql(query, *args, **kwargs):
     backend = kwargs.pop("backend", "duckdb")
     resolved: list[Table] = []
     refs = extract_table_names(query)
+    anonym_name = "current_table"
 
     for ref in refs:
         ctx = Context()
@@ -150,7 +153,7 @@ def sql(query, *args, **kwargs):
 
     frame = inspect.currentframe().f_back
     for name, val in {**frame.f_globals, **frame.f_locals}.items():
-        if isinstance(val, Table) and val.func_name != "anonymous":
+        if isinstance(val, Table) and val.func_name != anonym_name:
             if val.name in refs or val.func_name in refs:
                 resolved.append(val)
                 _execute_table(val)
@@ -160,7 +163,7 @@ def sql(query, *args, **kwargs):
     if backend == "duckdb":
         duckdb_result = duckdb.sql(query, *args, **kwargs)
         return Table(
-            sql=query, func_name="anonymous", args={},
+            sql=query, func_name=anonym_name, args={},
             deps=[r.spec for r in resolved],
             result=duckdb_result,
         )
