@@ -73,7 +73,7 @@ def _node_label(spec: TableSpec) -> str:
     return f"`**{display}**\n{formatted_args}`"
 
 
-def to_mermaid(table_spec: TableSpec) -> str:
+def generate_mermaid_code(table_spec: TableSpec) -> str:
     ctx = build_context(table_spec)
     target = table_spec.name
     lines = ["graph TD"]

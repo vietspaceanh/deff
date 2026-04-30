@@ -5,7 +5,7 @@ import inspect
 from .base import TableSpec, clean_sql, extract_table_names, sanitize_alias
 from .context import Context, build_context
 from .runner import Runner
-from .render import to_mermaid
+from .render import generate_mermaid_code
 
 
 class Table:
@@ -64,9 +64,11 @@ class Table:
         ctx = build_context(self.spec)
         return ";\n\n".join(Runner().build_statements(ctx, self.name)) + ";"
 
-    def to_mermaid(self):
-        print(to_mermaid(self.spec))
+    @property
+    def graph(self):
+        print(generate_mermaid_code(self.spec))
 
+    @property
     def df(self):
         _execute_table(self)
         return self.result.df()
