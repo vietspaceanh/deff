@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .base import REGISTRY, SESSION, TableSpec, extract_table_names, collect_cte_deps
+from .base import TABLE_DEFS, TableSpec, extract_table_names, collect_cte_deps
 
 
 class Context:
@@ -45,28 +45,24 @@ class Context:
     def resolve_name_dep(self, name: str, config: dict | None = None):
         if name in self.nodes or name in self._resolving:
             return
-        func = REGISTRY.get(name)
-        if func is None:
+        entry = TABLE_DEFS.get(name)
+        if entry is None:
+            return
+
+        if isinstance(entry, TableSpec):
+            self._process_table(entry, config, register=True)
             return
 
         kwargs = None
         if config and name in config:
             kwargs = config[name]
-        elif name in SESSION.get("last_args", {}):
-            kwargs = SESSION["last_args"][name]
         if kwargs is None:
-            kwargs = func.get_default_kwargs()
+            kwargs = entry.get_default_kwargs()
             if kwargs is None:
                 return
 
-        table = func(**kwargs)
-        resolved = TableSpec(
-            sql=table.sql, func_name=name, args=kwargs, name=name,
-            deps=list(table.deps), ctes=list(table.ctes),
-        )
-        self._process_table(resolved, config, register=True)
-        if resolved.name != name and name not in self.nodes:
-            self.nodes[name] = self.nodes[resolved.name]
+        table = entry(**kwargs)
+        self._process_table(table.spec, config, register=True)
 
     def topological_order(self, target: str) -> list[str]:
         visited: set[str] = set()

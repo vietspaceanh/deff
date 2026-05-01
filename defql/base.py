@@ -7,18 +7,17 @@ from dataclasses import dataclass, field
 import sqlglot
 from sqlglot import exp as sqlglot_exp
 
-REGISTRY: dict = {}
-SESSION: dict = {"last_args": {}}
+TABLE_DEFS: dict = {}
 
 
 @dataclass
 class TableSpec:
     sql: str
     func_name: str
-    args: dict
+    name: str
+    args: dict = field(default_factory=dict)
     deps: list[TableSpec] = field(default_factory=list)
     ctes: list[TableSpec] = field(default_factory=list)
-    name: str = ""
     is_cte: bool = False
 
 
