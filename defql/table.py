@@ -12,7 +12,7 @@ class Table:
         self.result = result
 
     @property
-    def sql(self) -> str:
+    def raw_sql(self) -> str:
         return self.spec.sql
 
     @property
@@ -49,27 +49,47 @@ class Table:
 
     @property
     def df(self):
-        self.execute()
+        self.get()
         return self.result.df()
 
     def refresh(self):
         self.result = None
 
+    def get(self, config: dict | None = None, backend: str = "duckdb"):
+        if self.result is not None:
+            return self.result
+        self.result = Runner(build_context(self.spec, config), backend).get(self.name)
+        return self.result
+
+    def sql(self, query: str, backend: str = "duckdb"):
+        self.get(backend=backend)
+        runner = Runner(backend=backend)
+        result = runner.sql(f"FROM {self.name} {query}")
+        return Table(
+            TableSpec(
+                sql=f"FROM {self.name} {query}",
+                func_name=self.func_name,
+                name=self.name,
+                deps=[self.spec],
+            ),
+            result=result,
+        )
+
     def fetchall(self):
-        self.execute()
+        self.get()
         return self.result.fetchall()
 
     def fetchmany(self, n):
-        self.execute()
+        self.get()
         return self.result.fetchmany(n)
 
     def fetchone(self):
-        self.execute()
+        self.get()
         return self.result.fetchone()
 
     def _repr_html_(self) -> str | None:
         try:
-            self.execute()
+            self.get()
             cols = self.result.columns
             types = [str(t).upper().split("(")[0] for t in self.result.types]
             rows = list(self.result.fetchmany(N_ROWS + 1))
@@ -84,7 +104,7 @@ class Table:
         return self.name
 
     def __repr__(self) -> str:
-        self.execute()
+        self.get()
         args_str = ", ".join(f"{k}={v!r}" for k, v in self.args.items())
         return f"Table({self.func_name}({args_str}))"
 
@@ -93,7 +113,7 @@ class Table:
             return getattr(self.result, name)
         raise AttributeError(
             f"'{type(self).__name__}' has no attribute '{name}'. "
-            f"Execute the table first (e.g. via sql()) to access result attributes."
+            f"Run get() first to access result attributes."
         )
 
     def __iter__(self):
@@ -109,16 +129,10 @@ class Table:
     def __bool__(self):
         return True
 
-    def execute(self, config: dict | None = None, backend: str = "duckdb"):
-        if self.result is not None:
-            return self.result
-        self.result = Runner(build_context(self.spec, config), backend).run(self.name)
-        return self.result
-
 
 def sql(query, backend: str = "duckdb"):
     if isinstance(query, Table):
-        query.execute()
+        query.get()
         return query
 
     resolved: list[TableSpec] = []
@@ -132,17 +146,17 @@ def sql(query, backend: str = "duckdb"):
         if isinstance(entry, TableSpec):
             ctx = build_context(entry)
             if ctx.nodes:
-                Runner(ctx, backend).run(entry.name)
+                Runner(ctx, backend).get(entry.name)
             resolved.append(entry)
         else:
             table = entry()
             resolved.append(table.spec)
             ctx = build_context(table.spec)
             if ctx.nodes:
-                Runner(ctx, backend).run(table.name)
+                Runner(ctx, backend).get(table.name)
 
     runner = Runner(backend=backend)
-    result = runner.execute(query)
+    result = runner.sql(query)
     spec = TableSpec(
         sql=query, func_name=anonym_name, args={}, name=anonym_name,
         deps=resolved,

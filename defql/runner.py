@@ -12,10 +12,10 @@ class Runner:
         self.ctx = ctx
         self.backend = backend
 
-    def run(self, target: str):
+    def get(self, target: str):
         for stmt in self.build_statements(target):
-            self.execute(stmt)
-        return self.execute(f"TABLE {target}")
+            self.sql(stmt)
+        return self.sql(f"TABLE {target}")
 
     def build_statements(self, target: str) -> list[str]:
         order = self.ctx.topological_order(target)
@@ -27,10 +27,10 @@ class Runner:
             statements.append(f"CREATE OR REPLACE TEMP TABLE {name} AS ({sql})")
         return statements
 
-    def execute(self, sql: str):
+    def sql(self, query: str):
         if self.backend == "duckdb":
-            from duckdb import sql as duckdb_sql
-            return duckdb_sql(sql)
+            import duckdb
+            return duckdb.sql(query)
         raise ValueError(f"Unsupported backend: {self.backend}")
 
     def _inject_ctes(self, sql: str, ctes: list[TableSpec]) -> str:
