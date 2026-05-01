@@ -8,23 +8,30 @@ from .context import Context
 
 
 class Runner:
-    def __init__(self, backend: str = "duckdb"):
+    def __init__(self, ctx: Context | None = None, backend: str = "duckdb"):
+        self.ctx = ctx
         self.backend = backend
 
-    def build_statements(self, ctx: Context, target: str) -> list[str]:
-        order = ctx.topological_order(target)
+    def run(self, target: str):
+        for stmt in self.build_statements(target):
+            self.execute(stmt)
+        return self.execute(f"TABLE {target}")
+
+    def build_statements(self, target: str) -> list[str]:
+        order = self.ctx.topological_order(target)
         statements = []
         for name in order:
-            spec = ctx.nodes[name]
+            spec = self.ctx.nodes[name]
             ctes = flatten_ctes(spec.ctes)
             sql = self._inject_ctes(spec.sql, ctes)
             statements.append(f"CREATE OR REPLACE TEMP TABLE {name} AS ({sql})")
         return statements
 
-    def run(self, ctx: Context, target: str):
-        for stmt in self.build_statements(ctx, target):
-            self._execute(stmt)
-        return self._execute(f"TABLE {target}")
+    def execute(self, sql: str):
+        if self.backend == "duckdb":
+            from duckdb import sql as duckdb_sql
+            return duckdb_sql(sql)
+        raise ValueError(f"Unsupported backend: {self.backend}")
 
     def _inject_ctes(self, sql: str, ctes: list[TableSpec]) -> str:
         if not ctes:
@@ -51,9 +58,3 @@ class Runner:
                 )
             )
         return exprs
-
-    def _execute(self, sql: str):
-        if self.backend == "duckdb":
-            from duckdb import sql as duckdb_sql
-            return duckdb_sql(sql)
-        raise ValueError(f"Unsupported backend: {self.backend}")
