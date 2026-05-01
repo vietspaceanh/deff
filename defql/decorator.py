@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextvars
 import inspect
 
-from .base import TABLE_DEFS, TableSpec, clean_sql, extract_table_names, sanitize_alias
+from .specs import TABLE_DEFS, TableSpec, clean_sql, extract_table_names, sanitize_alias
 from .table import Table
 
 composition_deps: contextvars.ContextVar[tuple[list, ...]] = contextvars.ContextVar(

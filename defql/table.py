@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .base import TABLE_DEFS, TableSpec, extract_table_names
+from .specs import TABLE_DEFS, TableSpec, extract_table_names
 from .context import build_context
 from .runner import Runner
 from .render import generate_mermaid_code, result_to_html, N_ROWS
@@ -55,15 +55,15 @@ class Table:
     def refresh(self):
         self.result = None
 
-    def get(self, config: dict | None = None, backend: str = "duckdb"):
+    def get(self, config: dict | None = None):
         if self.result is not None:
             return self.result
-        self.result = Runner(build_context(self.spec, config), backend).get(self.name)
+        self.result = Runner(build_context(self.spec, config)).get(self.name)
         return self.result
 
-    def sql(self, query: str, backend: str = "duckdb"):
-        self.get(backend=backend)
-        runner = Runner(backend=backend)
+    def sql(self, query: str):
+        self.get()
+        runner = Runner()
         result = runner.sql(f"FROM {self.name} {query}")
         return Table(
             TableSpec(
@@ -91,7 +91,7 @@ class Table:
         try:
             self.get()
             cols = self.result.columns
-            types = [str(t).upper().split("(")[0] for t in self.result.types]
+            types = self.result.types
             rows = list(self.result.fetchmany(N_ROWS + 1))
             truncated = len(rows) == (N_ROWS + 1)
             if truncated:
@@ -130,7 +130,7 @@ class Table:
         return True
 
 
-def sql(query, backend: str = "duckdb"):
+def sql(query):
     if isinstance(query, Table):
         query.get()
         return query
@@ -146,16 +146,16 @@ def sql(query, backend: str = "duckdb"):
         if isinstance(entry, TableSpec):
             ctx = build_context(entry)
             if ctx.nodes:
-                Runner(ctx, backend).get(entry.name)
+                Runner(ctx).get(entry.name)
             resolved.append(entry)
         else:
             table = entry()
             resolved.append(table.spec)
             ctx = build_context(table.spec)
             if ctx.nodes:
-                Runner(ctx, backend).get(table.name)
+                Runner(ctx).get(table.name)
 
-    runner = Runner(backend=backend)
+    runner = Runner()
     result = runner.sql(query)
     spec = TableSpec(
         sql=query, func_name=anonym_name, args={}, name=anonym_name,

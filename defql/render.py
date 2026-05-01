@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .base import TableSpec, extract_table_names, flatten_ctes
+from .specs import TableSpec, extract_table_names, flatten_ctes
 from .context import build_context
 
 N_ROWS = 200

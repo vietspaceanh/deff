@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import re
 import textwrap
+import sqlglot
 from dataclasses import dataclass, field
 
-import sqlglot
-from sqlglot import exp as sqlglot_exp
+from . import config
 
 TABLE_DEFS: dict = {}
 
@@ -33,9 +33,9 @@ def clean_sql(sql: str) -> str:
 
 def extract_table_names(sql: str) -> set[str]:
     try:
-        parsed = sqlglot.parse_one(sql, dialect="duckdb")
-        tables = {t.name for t in parsed.find_all(sqlglot_exp.Table)}
-        ctes = {cte.alias for cte in parsed.find_all(sqlglot_exp.CTE)}
+        parsed = sqlglot.parse_one(sql, dialect=config.dialect)
+        tables = {t.name for t in parsed.find_all(sqlglot.exp.Table)}
+        ctes = {cte.alias for cte in parsed.find_all(sqlglot.exp.CTE)}
         return tables - ctes
     except sqlglot.errors.ParseError:
         return set()

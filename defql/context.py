@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .base import TABLE_DEFS, TableSpec, extract_table_names, collect_cte_deps
+from .specs import TABLE_DEFS, TableSpec, extract_table_names, collect_cte_deps
 
 
 class Context:
