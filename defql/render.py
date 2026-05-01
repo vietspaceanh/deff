@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .base import REGISTRY, TableSpec, extract_table_names, flatten_ctes, collect_cte_deps
+from .base import TableSpec, extract_table_names, flatten_ctes
 from .context import build_context
 
 N_ROWS = 200
@@ -59,17 +59,16 @@ def _node_label(spec: TableSpec) -> str:
         return display
     named = []
     for k, v in spec.args.items():
-        if hasattr(v, "name"):
-            if v.name in REGISTRY:
-                p = v.name.split("__", 1)
-                val = f"{p[0]}.{p[1]}" if len(p) == 2 else p[0]
-            else:
-                val = v.name
+        if hasattr(v, "func_name"):
+            p = v.func_name.split("__", 1)
+            val = f"{p[0]}.{p[1]}" if len(p) == 2 else p[0]
+        elif hasattr(v, "name"):
+            val = v.name
         else:
             val = str(v).replace("'", "")
         named.append(f"<b>{k}</b>: {val}")
-    args = "\n".join(named)
-    formatted_args = f"<div style='text-align:left'><small><pre>{args}</pre></small></div>"
+    arg_block = "\n".join(named)
+    formatted_args = f"<div style='text-align:left'><small><pre>{arg_block}</pre></small></div>"
     return f"`**{display}**\n{formatted_args}`"
 
 
@@ -97,10 +96,8 @@ def generate_mermaid_code(table_spec: TableSpec) -> str:
             cte_names = sorted(c.name for c in all_ctes)
             key = (spec.func_name, tuple(cte_names))
 
-            sub_label = _node_label(spec)
-            if sub_label.startswith("`"):
-                parts = spec.func_name.split("__", 1)
-                sub_label = f"{parts[0]}.{parts[1]}" if len(parts) == 2 else parts[0]
+            parts = spec.func_name.split("__", 1)
+            sub_label = f"{parts[0]}.{parts[1]}" if len(parts) == 2 else parts[0]
 
             if key not in subgraphs:
                 subgraph_id = f"sg_{len(subgraphs)}"
