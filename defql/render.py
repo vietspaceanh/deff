@@ -3,8 +3,6 @@ from __future__ import annotations
 from .specs import TableSpec, extract_table_names, flatten_ctes
 from .context import build_context
 
-N_ROWS = 200
-
 COLORS = {
     "numeric": "#89b4fa",
     "string": "#8ee087dc",

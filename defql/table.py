@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from . import config
 from .specs import TABLE_DEFS, TableSpec, extract_table_names
 from .context import build_context
 from .runner import Runner
-from .render import generate_mermaid_code, result_to_html, N_ROWS
+from .render import generate_mermaid_code, result_to_html
 
 
 class Table:
@@ -92,10 +93,10 @@ class Table:
             self.get()
             cols = self.result.columns
             types = self.result.types
-            rows = list(self.result.fetchmany(N_ROWS + 1))
-            truncated = len(rows) == (N_ROWS + 1)
+            rows = list(self.result.fetchmany(config.rows + 1))
+            truncated = len(rows) == (config.rows + 1)
             if truncated:
-                rows = rows[:N_ROWS]
+                rows = rows[:config.rows]
             return result_to_html(cols, types, rows, truncated)
         except Exception:
             return None
@@ -130,14 +131,13 @@ class Table:
         return True
 
 
-def sql(query):
+def sql(query, name='current_table'):
     if isinstance(query, Table):
         query.get()
         return query
 
     resolved: list[TableSpec] = []
     refs = extract_table_names(query)
-    anonym_name = "current_table"
 
     for ref in refs:
         entry = TABLE_DEFS.get(ref)
@@ -158,7 +158,9 @@ def sql(query):
     runner = Runner()
     result = runner.sql(query)
     spec = TableSpec(
-        sql=query, func_name=anonym_name, args={}, name=anonym_name,
+        sql=query, func_name=name, args={}, name=name,
         deps=resolved,
     )
+    if name != 'current_table':
+        TABLE_DEFS[name] = spec
     return Table(spec, result=result)
