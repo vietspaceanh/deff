@@ -25,10 +25,6 @@ TYPE_ROLES = {
 }
 
 
-def _escape_html(s: str) -> str:
-    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
 def result_to_html(cols, types, rows, truncated) -> str:
     colors = [COLORS[TYPE_ROLES.get(t, "default")] for t in types]
     bg = COLORS["badge_bg"]
@@ -48,6 +44,41 @@ def result_to_html(cols, types, rows, truncated) -> str:
     elif rows:
         html += f"<em>({len(rows)} rows)</em>"
     return html
+
+
+def generate_mermaid_code(table_spec: TableSpec) -> str:
+    ctx = build_context(table_spec)
+    target = table_spec.name
+    lines = ["graph TD"]
+
+    subgraphs: dict = {}
+    node_to_subgraph: dict[str, str] = {}
+    parent_styles: set[str] = set()
+
+    for name in ctx.topological_order(target):
+        spec = ctx.nodes[name]
+        label = _node_label(spec)
+        if spec.ctes:
+            _register_subgraph(name, spec, subgraphs, node_to_subgraph, parent_styles, label, lines)
+        direct_tables = extract_table_names(spec.parsed) if spec.ctes else set()
+        _add_dep_edges(name, label, spec, node_to_subgraph, direct_tables, lines)
+
+    highlighted = COLORS["highlighted_border"]
+    for subgraph_id, all_ctes, sub_label, parent_specs in subgraphs.values():
+        _write_subgraph_header(subgraph_id, sub_label, all_ctes, lines)
+        _add_cte_internal_edges(subgraph_id, all_ctes, lines)
+        _close_subgraph(subgraph_id, all_ctes, highlighted, lines)
+        _add_cte_external_deps(subgraph_id, parent_specs, node_to_subgraph, highlighted, lines)
+
+    for name in parent_styles:
+        lines.append(f"    style {name} stroke-width:2px")
+
+    return "\n".join(lines)
+
+# ───────────────────────────── Helper functions ───────────────────────────── #
+
+def _escape_html(s: str) -> str:
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _node_label(spec: TableSpec) -> str:
@@ -70,60 +101,111 @@ def _node_label(spec: TableSpec) -> str:
     return f"`**{display}**\n{formatted_args}`"
 
 
-def generate_mermaid_code(table_spec: TableSpec) -> str:
-    ctx = build_context(table_spec)
-    target = table_spec.name
-    lines = ["graph TD"]
+def _add_dep_edges(
+    name: str,
+    label: str,
+    spec: TableSpec,
+    node_to_subgraph: dict[str, str],
+    direct_tables: set[str],
+    lines: list[str],
+):
+    current_sg = node_to_subgraph.get(name)
+    for dep in spec.deps:
+        dep_label = _node_label(dep)
+        if current_sg and dep.name not in direct_tables:
+            continue
+        lines.append(f'    {dep.name}["{dep_label}"] --> {name}["{label}"]')
 
-    subgraphs: dict[tuple, tuple[str, list[TableSpec], str]] = {}
-    node_to_subgraph: dict[str, str] = {}
-    parent_styles: set[str] = set()
 
-    for name in ctx.topological_order(target):
-        spec = ctx.nodes[name]
-        label = _node_label(spec)
-        for dep in spec.deps:
-            dep_label = _node_label(dep)
-            from_id = node_to_subgraph.get(dep.name)
-            if from_id:
-                lines.append(f'    {from_id} --> {name}["{label}"]')
-            else:
-                lines.append(f'    {dep.name}["{dep_label}"] --> {name}["{label}"]')
-        if spec.ctes:
-            all_ctes = flatten_ctes(spec.ctes)
-            cte_names = sorted(c.name for c in all_ctes)
-            key = (spec.func_name, tuple(cte_names))
+def _register_subgraph(
+    name: str,
+    spec: TableSpec,
+    subgraphs: dict,
+    node_to_subgraph: dict[str, str],
+    parent_styles: set[str],
+    label: str,
+    lines: list[str],
+):
+    all_ctes = flatten_ctes(spec.ctes)
+    cte_names = sorted(c.name for c in all_ctes)
+    key = (spec.func_name, tuple(cte_names))
 
-            parts = spec.func_name.split("__", 1)
-            sub_label = f"{parts[0]}.{parts[1]}" if len(parts) == 2 else parts[0]
+    parts = spec.func_name.split("__", 1)
+    sub_label = f"{parts[0]}.{parts[1]}" if len(parts) == 2 else parts[0]
 
-            if key not in subgraphs:
-                subgraph_id = f"sg_{len(subgraphs)}"
-                subgraphs[key] = (subgraph_id, all_ctes, sub_label)
-            else:
-                subgraph_id = subgraphs[key][0]
+    if key not in subgraphs:
+        subgraph_id = f"sg_{len(subgraphs)}"
+        subgraphs[key] = (subgraph_id, all_ctes, sub_label, [spec])
+    else:
+        subgraph_id = subgraphs[key][0]
+        subgraphs[key][3].append(spec)
 
-            node_to_subgraph[name] = subgraph_id
-            parent_styles.add(name)
-            lines.append(f'    {name}["{label}"] --> {subgraph_id}')
+    node_to_subgraph[name] = subgraph_id
+    parent_styles.add(name)
+    lines.append(f'    {subgraph_id} --> {name}["{label}"]')
 
-    highlighted = COLORS["highlighted_border"]
-    for subgraph_id, all_ctes, sub_label in subgraphs.values():
-        cte_names = {c.name for c in all_ctes}
-        lines.append(f'    subgraph {subgraph_id}["CTEs of <b>{sub_label}</b>"]')
-        for cte in all_ctes:
-            cte_id = f"{subgraph_id}__{cte.name}"
-            lines.append(f'        {cte_id}["{cte.name}"]')
-        for cte in all_ctes:
-            for ref in extract_table_names(cte.sql) & cte_names:
-                if ref != cte.name:
-                    lines.append(f"        {subgraph_id}__{ref} --> {subgraph_id}__{cte.name}")
-        lines.append("    end")
-        lines.append(f"    style {subgraph_id} stroke:{highlighted},stroke-width:2px,stroke-dasharray:5 3")
-        for cte in all_ctes:
-            lines.append(f"    style {subgraph_id}__{cte.name} stroke:{highlighted},stroke-width:2px")
 
-    for name in parent_styles:
-        lines.append(f"    style {name} stroke-width:2px")
+def _write_subgraph_header(
+    subgraph_id: str,
+    sub_label: str,
+    all_ctes: list[TableSpec],
+    lines: list[str],
+):
+    lines.append(f'    subgraph {subgraph_id}["Sub-tables of <b>{sub_label}</b>"]')
+    for cte in all_ctes:
+        cte_id = f"{subgraph_id}__{cte.name}"
+        lines.append(f'        {cte_id}["{cte.name}"]')
 
-    return "\n".join(lines)
+
+def _add_cte_internal_edges(
+    subgraph_id: str,
+    all_ctes: list[TableSpec],
+    lines: list[str],
+):
+    cte_names = {c.name for c in all_ctes}
+    for cte in all_ctes:
+        for ref in extract_table_names(cte.parsed) & cte_names:
+            if ref != cte.name:
+                lines.append(f"        {subgraph_id}__{ref} --> {subgraph_id}__{cte.name}")
+
+
+def _add_cte_external_deps(
+    subgraph_id: str,
+    parent_specs: list[TableSpec],
+    node_to_subgraph: dict[str, str],
+    highlighted: str,
+    lines: list[str],
+):
+    link_idx = sum(1 for l in lines if "-->" in l or "-.->" in l)
+    seen: set[tuple[str, str]] = set()
+    for ps in parent_specs:
+        for cte in flatten_ctes(ps.ctes):
+            cte_dep_names = {d.name for d in cte.deps}
+            for dep in ps.deps:
+                if dep.name not in cte_dep_names:
+                    continue
+                if node_to_subgraph.get(dep.name) is not None:
+                    continue
+                edge = (dep.name, cte.name)
+                if edge in seen:
+                    continue
+                seen.add(edge)
+                lines.append(
+                    f'    {dep.name}["{_node_label(dep)}"] -.-> {subgraph_id}__{cte.name}'
+                )
+                lines.append(
+                    f"    linkStyle {link_idx} stroke:{highlighted},stroke-width:1px"
+                )
+                link_idx += 1
+
+
+def _close_subgraph(
+    subgraph_id: str,
+    all_ctes: list[TableSpec],
+    highlighted: str,
+    lines: list[str],
+):
+    lines.append("    end")
+    lines.append(f"    style {subgraph_id} stroke:{highlighted},stroke-width:2px,stroke-dasharray:5 3")
+    for cte in all_ctes:
+        lines.append(f"    style {subgraph_id}__{cte.name} stroke:{highlighted},stroke-width:2px")
