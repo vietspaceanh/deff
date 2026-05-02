@@ -85,7 +85,7 @@ def _node_label(spec: TableSpec) -> str:
     parts = spec.func_name.split("__", 1)
     display = f"{parts[0]}.{parts[1]}" if len(parts) == 2 else parts[0]
     if not spec.args:
-        return display
+        return f"<b>{display}<b>"
     named = []
     for k, v in spec.args.items():
         if hasattr(v, "func_name"):
@@ -154,7 +154,7 @@ def _write_subgraph_header(
     lines.append(f'    subgraph {subgraph_id}["Sub-tables of <b>{sub_label}</b>"]')
     for cte in all_ctes:
         cte_id = f"{subgraph_id}__{cte.name}"
-        lines.append(f'        {cte_id}["{cte.name}"]')
+        lines.append(f'        {cte_id}["{_node_label(cte)}"]')
 
 
 def _add_cte_internal_edges(
