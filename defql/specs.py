@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 import textwrap
+from typing import Any
+
 import sqlglot
 from dataclasses import dataclass, field
 
@@ -19,6 +21,13 @@ class TableSpec:
     deps: list[TableSpec] = field(default_factory=list)
     ctes: list[TableSpec] = field(default_factory=list)
     is_cte: bool = False
+    _parsed: Any = field(init=False, repr=False, default=None)
+
+    @property
+    def parsed(self) -> sqlglot.exp.Expression:
+        if self._parsed is None:
+            self._parsed = sqlglot.parse_one(self.sql, dialect=config.dialect)
+        return self._parsed
 
 
 def clean_sql(sql: str) -> str:
@@ -31,9 +40,12 @@ def clean_sql(sql: str) -> str:
     return result
 
 
-def extract_table_names(sql: str) -> set[str]:
+def extract_table_names(sql: str | sqlglot.exp.Expression) -> set[str]:
     try:
-        parsed = sqlglot.parse_one(sql, dialect=config.dialect)
+        if isinstance(sql, sqlglot.exp.Expression):
+            parsed = sql
+        else:
+            parsed = sqlglot.parse_one(sql, dialect=config.dialect)
         tables = {t.name for t in parsed.find_all(sqlglot.exp.Table)}
         ctes = {cte.alias for cte in parsed.find_all(sqlglot.exp.CTE)}
         return tables - ctes

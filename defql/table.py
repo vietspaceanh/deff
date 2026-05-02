@@ -50,8 +50,11 @@ class Table:
 
     @property
     def df(self):
-        self.get()
-        return self.result.df()
+        return self.get().df()
+
+    @property
+    def columns(self):
+        return self.get().columns
 
     def refresh(self):
         self.result = None
@@ -64,11 +67,11 @@ class Table:
 
     def sql(self, query: str):
         self.get()
-        runner = Runner()
-        result = runner.sql(f"FROM {self.name} {query}")
+        completed_query = f"FROM {self.name} {query}"
+        result = Runner().sql(completed_query)
         return Table(
             TableSpec(
-                sql=f"FROM {self.name} {query}",
+                sql=completed_query,
                 func_name=self.func_name,
                 name=self.name,
                 deps=[self.spec],

@@ -28,7 +28,7 @@ class Runner:
         for name in order:
             spec = self.ctx.nodes[name]
             ctes = flatten_ctes(spec.ctes)
-            sql = self._inject_ctes(spec.sql, ctes)
+            sql = self._inject_ctes(spec, ctes)
             statements.append(f"CREATE OR REPLACE {ddl} {name} AS ({sql})")
         return statements
 
@@ -47,11 +47,11 @@ class Runner:
     def _sqlglot_dialect(self) -> str:
         return {"duckdb": "duckdb", "spark": "spark"}.get(self.dialect, "duckdb")
 
-    def _inject_ctes(self, sql: str, ctes: list[TableSpec]) -> str:
+    def _inject_ctes(self, spec: TableSpec, ctes: list[TableSpec]) -> str:
         if not ctes:
-            return sql
+            return spec.sql
         dialect = self._sqlglot_dialect()
-        parsed = sqlglot.parse_one(sql, dialect=dialect)
+        parsed = spec.parsed.copy()
         new_ctes = self._build_cte_exprs(ctes)
         existing_with = parsed.args.get("with_")
         if existing_with:
@@ -64,7 +64,7 @@ class Runner:
         dialect = self._sqlglot_dialect()
         exprs = []
         for cte in ctes:
-            cte_query = sqlglot.parse_one(cte.sql, dialect=dialect)
+            cte_query = cte.parsed.copy()
             exprs.append(
                 sqlglot_exp.CTE(
                     this=cte_query,

@@ -19,7 +19,7 @@ class Context:
         if register:
             self._resolving.add(table_spec.name)
 
-        referenced = extract_table_names(table_spec.sql)
+        referenced = extract_table_names(table_spec.parsed)
         for ref in referenced:
             if ref not in self.nodes and ref not in self._resolving:
                 self.resolve_name_dep(ref, config)
