@@ -66,23 +66,24 @@ class Table:
         return self.result
 
     def __or__(self, query: str):
-        """Convenient piping table to sql query."""
         self.get()
-        completed_query = f"FROM {self.name} {query}"
+        source = self.name or f"({self.raw_sql})"
+        completed_query = f"FROM {source} {query}"
         result = Runner().sql(completed_query)
         return Table(
             TableSpec(
                 sql=completed_query,
-                func_name=self.func_name,
-                name=self.name,
-                deps=[self.spec],
+                func_name=None,
+                name=None,
+                deps=list(self.spec.deps),
+                is_adhoc=True,
             ),
             result=result,
         )
     
     def __getitem__(self, cols: str):
         """Quickly get columns (as an expression)."""
-        return self.__rshift__(f"SELECT {cols}")
+        return self.__or__(f"SELECT {cols}")
 
     def fetchall(self):
         self.get()
@@ -110,6 +111,8 @@ class Table:
             return None
 
     def __str__(self) -> str:
+        if self.spec.is_adhoc:
+            return f"({self.raw_sql})"
         return self.name
 
     def __repr__(self) -> str:
@@ -139,7 +142,7 @@ class Table:
         return True
 
 
-def sql(query, name='current_table'):
+def sql(query, name=None):
     if isinstance(query, Table):
         query.get()
         return query
@@ -159,16 +162,18 @@ def sql(query, name='current_table'):
         else:
             table = entry()
             resolved.append(table.spec)
-            ctx = build_context(table.spec)
-            if ctx.nodes:
-                Runner(ctx).get(table.name)
+            if table.result is None:
+                ctx = build_context(table.spec)
+                if ctx.nodes:
+                    table.result = Runner(ctx).get(table.name)
 
     runner = Runner()
     result = runner.sql(query)
     spec = TableSpec(
         sql=query, func_name=name, args={}, name=name,
         deps=resolved,
+        is_adhoc=(name is None),
     )
-    if name != 'current_table':
+    if name is not None:
         TABLE_DEFS[name] = spec
     return Table(spec, result=result)

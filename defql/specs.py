@@ -15,12 +15,13 @@ TABLE_DEFS: dict = {}
 @dataclass
 class TableSpec:
     sql: str
-    func_name: str
-    name: str
+    func_name: str | None
+    name: str | None
     args: dict = field(default_factory=dict)
     deps: list[TableSpec] = field(default_factory=list)
     ctes: list[TableSpec] = field(default_factory=list)
     is_cte: bool = False
+    is_adhoc: bool = False
     _parsed: Any = field(init=False, repr=False, default=None)
 
     @property

@@ -19,8 +19,13 @@ def _qualified_name(func) -> str:
 
 
 class tbl:
-    def __init__(self, func):
-        self._func = func
+    def __init__(self, func=None):
+        self.func = func
+        if func is not None:
+            self._init_from_func(func)
+
+    def _init_from_func(self, func):
+        self.func = func
         self.name = _qualified_name(func)
         self._cached_table: Table | None = None
         self.__wrapped__ = func
@@ -34,7 +39,15 @@ class tbl:
             TABLE_DEFS[self.name] = self
 
     def __call__(self, *args, **kwargs):
-        sig = inspect.signature(self._func)
+        if self.func is None:
+            func = args[0]
+            self._init_from_func(func)
+            return self
+
+        if not args and not kwargs and self._cached_table is not None:
+            return self._cached_table
+
+        sig = inspect.signature(self.func)
         bound = sig.bind(*args, **kwargs)
         bound.apply_defaults()
         all_args = dict(bound.arguments)
@@ -42,7 +55,7 @@ class tbl:
         local_deps: list[Table] = []
         token = composition_deps.set(composition_deps.get() + (local_deps,))
         try:
-            sql = self._func(*args, **kwargs)
+            sql = self.func(*args, **kwargs)
         finally:
             composition_deps.reset(token)
 
@@ -80,7 +93,7 @@ class tbl:
         return table
 
     def get_default_kwargs(self) -> dict | None:
-        sig = inspect.signature(self._func)
+        sig = inspect.signature(self.func)
         try:
             bound = sig.bind()
             bound.apply_defaults()
