@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sqlglot
-from sqlglot import exp as sqlglot_exp
 
 from .base import Result
 from .. import config as global_config
@@ -57,7 +56,7 @@ class Runner:
         if existing_with:
             existing_with.set("expressions", new_ctes + list(existing_with.expressions))
         else:
-            parsed.set("with_", sqlglot_exp.With(expressions=new_ctes))
+            parsed.set("with_", sqlglot.exp.With(expressions=new_ctes))
         return parsed.sql(dialect=dialect)
 
     def _build_cte_exprs(self, ctes: list[TableSpec]) -> list:
@@ -66,10 +65,10 @@ class Runner:
         for cte in ctes:
             cte_query = cte.parsed.copy()
             exprs.append(
-                sqlglot_exp.CTE(
+                sqlglot.exp.CTE(
                     this=cte_query,
-                    alias=sqlglot_exp.TableAlias(
-                        this=sqlglot_exp.to_identifier(cte.name),
+                    alias=sqlglot.exp.TableAlias(
+                        this=sqlglot.exp.to_identifier(cte.name),
                     ),
                 )
             )
