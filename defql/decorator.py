@@ -129,8 +129,11 @@ class tbl:
     def _repr_html_(self):
         return self.__getattr__('_repr_html_')()
 
-    def sql(self, query: str):
-        return self.__getattr__('sql')(query)
+    def __getitem__(self, cols: str):
+        return self.__getattr__('__getitem__')(cols)
+
+    def __or__(self, query: str):
+        return self.__getattr__('__or__')(query)
 
     @property
     def columns(self):

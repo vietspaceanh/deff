@@ -65,7 +65,8 @@ class Table:
         self.result = Runner(build_context(self.spec, config)).get(self.name)
         return self.result
 
-    def sql(self, query: str):
+    def __or__(self, query: str):
+        """Convenient piping table to sql query."""
         self.get()
         completed_query = f"FROM {self.name} {query}"
         result = Runner().sql(completed_query)
@@ -78,6 +79,10 @@ class Table:
             ),
             result=result,
         )
+    
+    def __getitem__(self, cols: str):
+        """Quickly get columns (as an expression)."""
+        return self.__rshift__(f"SELECT {cols}")
 
     def fetchall(self):
         self.get()
