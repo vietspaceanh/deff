@@ -79,6 +79,15 @@ class tbl:
 
         return table
 
+    def get_default_kwargs(self) -> dict | None:
+        sig = inspect.signature(self._func)
+        try:
+            bound = sig.bind()
+            bound.apply_defaults()
+            return dict(bound.arguments)
+        except TypeError:
+            return None
+
     def __str__(self):
         if self.is_local:
             if self._cached_table is None:
@@ -93,7 +102,9 @@ class tbl:
                 f"'{self.__name__}' table requires parameters. "
                 f"Call {self.__name__}(...) and/or assign the result to a variable to use."
             )
-        return self.name
+
+        cached = self._ensure_cached()
+        return cached.name if cached is not None else self.name
 
     def _ensure_cached(self) -> Table | None:
         if self._cached_table is None:
@@ -102,19 +113,33 @@ class tbl:
                 self._cached_table = self(**kwargs)
         return self._cached_table
 
-    def _repr_html_(self):
+    def __getattr__(self, name):
         cached = self._ensure_cached()
-        return cached._repr_html_() if cached else None
+        if cached is None:
+            raise AttributeError(
+                f"'{type(self).__name__}' object has no attribute '{name}'. "
+                f"Table requires arguments and cannot be auto-initialized."
+            )
+        return getattr(cached, name)
 
     def __repr__(self):
         cached = self._ensure_cached()
         return repr(cached) if cached else f"Table({self.name}) (uninitialized)"
 
-    def get_default_kwargs(self) -> dict | None:
-        sig = inspect.signature(self._func)
-        try:
-            bound = sig.bind()
-            bound.apply_defaults()
-            return dict(bound.arguments)
-        except TypeError:
-            return None
+    def _repr_html_(self):
+        return self.__getattr__('_repr_html_')()
+
+    def sql(self, query: str):
+        return self.__getattr__('sql')(query)
+
+    @property
+    def columns(self):
+        return self.__getattr__('columns')
+
+    @property
+    def graph(self):
+        return self.__getattr__('graph')
+
+    @property
+    def df(self):
+        return self.__getattr__('df')
