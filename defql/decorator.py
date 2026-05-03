@@ -159,3 +159,11 @@ class tbl:
     @property
     def df(self):
         return self.__getattr__('df')
+
+    @property
+    def schema(self):
+        return self.__getattr__('schema')
+
+    @property
+    def stats(self):
+        return self.__getattr__('stats')
