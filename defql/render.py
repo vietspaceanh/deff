@@ -12,7 +12,7 @@ COLORS = {
     "border": "#45475a",
     "default": "#555555",
     "default_bg": "#eeeeee",
-    "highlighted_border": "#7190f6b0",
+    "highlighted_border": "#589bffb8",
 }
 NUMERIC = ("INTEGER", "BIGINT", "HUGEINT", "SMALLINT", "TINYINT", "FLOAT", "DOUBLE", "DECIMAL")
 TEMPORAL = ("DATE", "TIMESTAMP", "TIMESTAMP WITH TIME ZONE", "TIME", "INTERVAL")
@@ -28,10 +28,10 @@ TYPE_ROLES = {
 def result_to_html(cols, types, rows, truncated) -> str:
     colors = [COLORS[TYPE_ROLES.get(t, "default")] for t in types]
     bg = COLORS["badge_bg"]
-    html = '<div style="max-height:400px; overflow-y:auto"><table style="border-collapse:collapse"><thead><tr>'
+    html = '<div style="max-height:400px; overflow-y:auto"><table style="border-collapse:separate"><thead><tr>'
     sep = f'border-right:1px solid {COLORS["border"]}'
     for col, t, c in zip(cols, types, colors):
-        html += f'<th style="text-align:center;{sep}">{col}<br><span style="font-size:0.75em;color:{c};background:{bg};padding:1px 5px;border-radius:3px;font-weight:500">{t}</span></th>'
+        html += f'<th style="text-align:center;position:sticky;top:0;z-index:1;backdrop-filter:blur(24px);background:rgba(128,128,128,0.04);{sep}">{col}<br><span style="font-size:0.75em;color:{c};background:{bg};padding:1px 5px;border-radius:3px;font-weight:500">{t}</span></th>'
     html += "</tr></thead><tbody>"
     for row in rows:
         html += "<tr>" + "".join(
@@ -184,8 +184,7 @@ def _add_cte_external_deps(
             for dep in ps.deps:
                 if dep.name not in cte_dep_names:
                     continue
-                if node_to_subgraph.get(dep.name) is not None:
-                    continue
+
                 edge = (dep.name, cte.name)
                 if edge in seen:
                     continue
