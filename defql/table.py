@@ -6,6 +6,8 @@ from .context import build_context
 from .runner import Runner
 from .render import generate_mermaid_code, result_to_html
 
+TMP_TABLE_NAME = 'current_table'
+
 
 class Table:
     def __init__(self, spec: TableSpec, result=None):
@@ -55,6 +57,14 @@ class Table:
     @property
     def columns(self):
         return self.get().columns
+    
+    @property
+    def schema(self):
+        return self.sql(f"DESCRIBE {self.name}")
+
+    @property
+    def stats(self):
+        return self.sql(f"SUMMARIZE {self.name}")
 
     def refresh(self):
         self.result = None
@@ -65,21 +75,24 @@ class Table:
         self.result = Runner(build_context(self.spec, config)).get(self.name)
         return self.result
 
-    def __or__(self, query: str):
+    def sql(self, query: str):
         self.get()
-        source = self.name or f"({self.raw_sql})"
-        completed_query = f"FROM {source} {query}"
-        result = Runner().sql(completed_query)
+        result = Runner().sql(query)
         return Table(
             TableSpec(
-                sql=completed_query,
-                func_name=None,
-                name=None,
+                sql=query,
+                func_name=TMP_TABLE_NAME,
+                name=TMP_TABLE_NAME,
                 deps=list(self.spec.deps),
                 is_adhoc=True,
             ),
             result=result,
         )
+
+    def __or__(self, query: str):
+        source = f"({self.raw_sql})" if self.spec.is_adhoc else self.name
+        completed_query = f"FROM {source} {query}"
+        return self.sql(completed_query)
     
     def __getitem__(self, cols: str):
         """Quickly get columns (as an expression)."""
@@ -96,6 +109,7 @@ class Table:
     def fetchone(self):
         self.get()
         return self.result.fetchone()
+
 
     def _repr_html_(self) -> str | None:
         try:
@@ -142,7 +156,7 @@ class Table:
         return True
 
 
-def sql(query, name=None):
+def sql(query, name=TMP_TABLE_NAME):
     if isinstance(query, Table):
         query.get()
         return query
@@ -169,11 +183,12 @@ def sql(query, name=None):
 
     runner = Runner()
     result = runner.sql(query)
+    is_adhoc = (name == TMP_TABLE_NAME)
     spec = TableSpec(
         sql=query, func_name=name, args={}, name=name,
         deps=resolved,
-        is_adhoc=(name is None),
+        is_adhoc=is_adhoc,
     )
-    if name is not None:
+    if not is_adhoc:
         TABLE_DEFS[name] = spec
     return Table(spec, result=result)
