@@ -1,4 +1,4 @@
-from defql import tbl
+from deff import tbl
 
 # ────────────────────────────── Data file paths ───────────────────────────── #
 # Clone this repo to ~/Downloads: https://github.com/dbt-labs/jaffle_shop_duckdb/tree/duckdb

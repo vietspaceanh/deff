@@ -1,5 +1,5 @@
 [project]
-name = "defql"
+name = "deff"
 version = "0.4.0"
 requires-python = ">=3.13"
 dependencies = [
@@ -14,4 +14,4 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["defql*"]
+include = ["deff*"]
