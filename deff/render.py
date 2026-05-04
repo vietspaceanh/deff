@@ -175,10 +175,7 @@ def _add_cte_external_deps(
     for ps in parent_specs:
         for cte in flatten_ctes(ps.ctes):
             cte_direct = extract_table_names(cte.parsed)
-            cte_dep_names = ctx.edges.get(cte.name, set())
             for dep_name in ctx.edges.get(ps.name, set()):
-                if dep_name not in cte_dep_names:
-                    continue
                 if dep_name not in cte_direct:
                     continue
                 edge = (dep_name, cte.name)

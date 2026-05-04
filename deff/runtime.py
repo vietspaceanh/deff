@@ -9,35 +9,44 @@ from .specs import TableSpec, extract_table_names, flatten_ctes
 
 class Graph:
     def __init__(self, runtime: Runtime, spec: TableSpec):
-        self._runtime = runtime
         self.nodes: dict[str, TableSpec] = {}
         self.edges: dict[str, set[str]] = {}
+        self._runtime = runtime
         self._aliases: dict[str, str] = {}
         self._dialect = config.dialect
-        self._process(spec)
+        self._build_graph(spec)
 
-    def _process(self, spec: TableSpec):
+    def _resolve_ref(self, ref: str) -> TableSpec | None:
+        entry = self._runtime.resolve(ref)
+        if entry is None:
+            return None
+        return entry if isinstance(entry, TableSpec) else entry(**entry.get_default_kwargs() or {}).spec
+
+    def _build_graph(self, spec: TableSpec) -> None:
         if spec.name in self.nodes:
-            return
-        self.nodes[spec.name] = spec
-        if spec.func_name != spec.name:
-            self._aliases[spec.func_name] = spec.name
+            if not spec.is_cte:
+                return
+        else:
+            self.nodes[spec.name] = spec
+            if spec.func_name != spec.name:
+                self._aliases[spec.func_name] = spec.name
+        self._process_references(spec)
+        self._process_ctes(spec)
 
-        def canon(name): return self._aliases.get(name, name)
-
+    def _process_references(self, spec: TableSpec) -> None:
         for ref in extract_table_names(spec.parsed):
-            if canon(ref) not in self.nodes:
-                entry = self._runtime.resolve(ref)
-                if entry is None:
-                    continue
-                s = entry if isinstance(entry, TableSpec) else entry(**entry.get_default_kwargs() or {}).spec
-                self._process(s)
-            if canon(ref) in self.nodes and canon(ref) != spec.name:
-                self.edges.setdefault(spec.name, set()).add(canon(ref))
+            canonical_name = self._aliases.get(ref, ref)
+            if canonical_name not in self.nodes:
+                resolved = self._resolve_ref(ref)
+                if resolved is not None:
+                    self._build_graph(resolved)
+            if canonical_name in self.nodes and canonical_name != spec.name:
+                self.edges.setdefault(spec.name, set()).add(canonical_name)
 
+    def _process_ctes(self, spec: TableSpec) -> None:
         cte_names = {c.name for c in spec.ctes}
-        for c in reversed([c for c in spec.ctes if c.name not in self.nodes]):
-            self._process(c)
+        for c in reversed(spec.ctes):
+            self._build_graph(c)
             for dep in self.edges.get(c.name, set()):
                 if dep not in cte_names:
                     self.edges.setdefault(spec.name, set()).add(dep)
