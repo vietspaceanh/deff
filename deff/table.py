@@ -175,14 +175,15 @@ def sql(query, name=TMP_TABLE_NAME):
             continue
         if isinstance(entry, TableSpec):
             spec = entry
+            resolved.append(spec)
+            for stmt in runtime.statements(spec):
+                if stmt not in seen:
+                    seen.add(stmt)
+                    all_stmts.append(stmt)
         else:
             table = entry()
-            spec = table.spec
-        resolved.append(spec)
-        for stmt in runtime.statements(spec):
-            if stmt not in seen:
-                seen.add(stmt)
-                all_stmts.append(stmt)
+            table.get()
+            resolved.append(table.spec)
 
     if all_stmts:
         runner.sql(";\n\n".join(all_stmts) + ";")

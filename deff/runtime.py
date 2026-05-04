@@ -19,8 +19,12 @@ class Graph:
     def _resolve_ref(self, ref: str) -> TableSpec | None:
         entry = self._runtime.resolve(ref)
         if entry is None:
-            return None
-        return entry if isinstance(entry, TableSpec) else entry(**entry.get_default_kwargs() or {}).spec
+            return
+        if isinstance(entry, TableSpec):
+            return entry
+        if entry.args is None:
+            return
+        return entry(**entry.args).spec
 
     def _build_graph(self, spec: TableSpec) -> None:
         if spec.name in self.nodes:
