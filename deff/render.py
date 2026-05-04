@@ -5,8 +5,8 @@ from .runtime import runtime, Graph
 
 COLORS = {
     "numeric": "#89b4fa",
-    "string": "#8ee087dc",
-    "boolean": "#fab387dc",
+    "string": "#8ee087",
+    "boolean": "#fab387",
     "temporal": "#b4befe",
     "badge_bg": "#313244",
     "border": "#45475a",
@@ -27,15 +27,21 @@ TYPE_ROLES = {
 
 def result_to_html(cols, types, rows, truncated) -> str:
     colors = [COLORS[TYPE_ROLES.get(t, "default")] for t in types]
-    bg = COLORS["badge_bg"]
-    html = '<div style="max-height:400px; overflow-y:auto"><table style="border-collapse:separate"><thead><tr>'
-    sep = f'border-right:1px solid {COLORS["border"]}'
+    border = COLORS["border"]
+    html = f"""<style>
+    .deff-tbl {{ border-collapse:separate }}
+    .deff-tbl th {{ text-align:center;position:sticky;top:0;z-index:1;backdrop-filter:blur(24px);background:rgba(128,128,128,0.04);border-right:1px solid {border} }}
+    .deff-tbl td {{ border-right:1px solid {border} }}
+    .deff-tbl-badge {{ font-size:0.75em;background:{COLORS["badge_bg"]};padding:1px 5px;border-radius:3px;font-weight:500 }}
+    </style>
+    <div style="max-height:400px;overflow-y:auto"><table class="deff-tbl"><thead><tr>
+    """
     for col, t, c in zip(cols, types, colors):
-        html += f'<th style="text-align:center;position:sticky;top:0;z-index:1;backdrop-filter:blur(24px);background:rgba(128,128,128,0.04);{sep}">{col}<br><span style="font-size:0.75em;color:{c};background:{bg};padding:1px 5px;border-radius:3px;font-weight:500">{t}</span></th>'
+        html += f'<th>{col}<br><span class="deff-tbl-badge" style="color:{c}">{t}</span></th>'
     html += "</tr></thead><tbody>"
     for row in rows:
         html += "<tr>" + "".join(
-            f'<td style="color:{colors[i]};{sep}">{_escape_html(str(v)) if v is not None else "&nbsp;"}</td>'
+            f'<td style="color:{colors[i]}">{_escape_html(str(v)) if v is not None else "&nbsp;"}</td>'
             for i, v in enumerate(row)
         ) + "</tr>"
     html += "</tbody></table></div>"
@@ -84,18 +90,22 @@ def generate_mermaid_code(table_spec: TableSpec) -> str:
 
 # ───────────────────────────── Helper functions ───────────────────────────── #
 
+def _display_name(func_name: str) -> str:
+    parts = func_name.split("__", 1)
+    return f"{parts[0]}.{parts[1]}" if len(parts) == 2 else parts[0]
+
+
 def _escape_html(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _node_label(spec: TableSpec) -> str:
-    parts = spec.func_name.split("__", 1)
     if spec.is_cte:
-        display = parts[-1]
+        display = spec.func_name.split("__", 1)[-1]
     else:
-        display = f"{parts[0]}.{parts[1]}" if len(parts) == 2 else parts[0]
+        display = _display_name(spec.func_name)
     if not spec.args:
-        return f"<b>{display}<b>"
+        return f"<b>{display}</b>"
     named = []
     for k, v in spec.args.items():
         if hasattr(v, "func_name"):
@@ -124,8 +134,7 @@ def _register_subgraph(
     cte_names = sorted(c.name for c in all_ctes)
     key = (spec.func_name, tuple(cte_names))
 
-    parts = spec.func_name.split("__", 1)
-    sub_label = f"{parts[0]}.{parts[1]}" if len(parts) == 2 else parts[0]
+    sub_label = _display_name(spec.func_name)
 
     if key not in subgraphs:
         subgraph_id = f"sg_{len(subgraphs)}"
