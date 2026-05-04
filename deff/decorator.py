@@ -38,8 +38,7 @@ class tbl:
 
     def __call__(self, *args, **kwargs):
         if self.func is None:
-            func = args[0]
-            self._init_from_func(func)
+            self._init_from_func(args[0])
             return self
 
         sig = inspect.signature(self.func)
@@ -47,6 +46,16 @@ class tbl:
         bound.apply_defaults()
         all_args = dict(bound.arguments)
 
+        # Cache check (module-level tables only)
+        if not self.is_local:
+            default_kwargs = self.args
+            is_default_call = default_kwargs is not None and not args and all_args == default_kwargs
+            if is_default_call and self._cached_table is not None and self._cached_fingerprint == self._dependency_fingerprint():
+                return self._cached_table
+        else:
+            is_default_call = False
+
+        # Run function (captures local dep tables)
         local_deps: list[Table] = []
         token = composition_deps.set(composition_deps.get() + (local_deps,))
         try:
@@ -54,6 +63,7 @@ class tbl:
         finally:
             composition_deps.reset(token)
 
+        # Resolve references among deps
         sql = f"SELECT * FROM {result}" if isinstance(result, Table) else result
         referenced = extract_table_names(clean_sql(sql))
 
@@ -63,6 +73,7 @@ class tbl:
 
         local_deps = [d for d in local_deps if d.name in referenced]
 
+        # Build spec and table
         name = sanitize_alias(self.name, all_args)
 
         spec = TableSpec(
@@ -77,18 +88,24 @@ class tbl:
 
         table = Table(spec)
 
+        # Register alias and update cache
         if not self.is_local:
             self._last_args = all_args
             if table.name != self.name:
                 runtime.register(table.name, spec)
+            if is_default_call:
+                self._cached_table = table
+                self._cached_fingerprint = self._dependency_fingerprint()
 
+        # Stack to parent's composition deps
         stack = composition_deps.get()
         if stack:
             stack[-1].append(table)
 
         return table
 
-    def get_default_kwargs(self) -> dict | None:
+    @property
+    def args(self) -> dict | None:
         sig = inspect.signature(self.func)
         try:
             bound = sig.bind()
@@ -108,14 +125,13 @@ class tbl:
                     target.append(self._cached_table)
             return self._cached_table.name
 
-        if self.get_default_kwargs() is None:
+        if self.args is None:
             raise RuntimeError(
                 f"'{self.__name__}' table requires parameters. "
                 f"Call {self.__name__}(...) and/or assign the result to a variable to use."
             )
 
-        cached = self._ensure_cached()
-        return cached.name if cached is not None else self.name
+        return self().name
 
     def _dependency_fingerprint(self) -> int:
         g = self.func.__globals__
@@ -123,7 +139,7 @@ class tbl:
         for name in self._global_deps:
             val = g[name]
             if isinstance(val, tbl):
-                t = val._ensure_cached()
+                t = val() if val.args is not None else None
                 parts.append(f"{name}={t.spec.sql if t else None}")
             elif isinstance(val, types.ModuleType):
                 parts.append(f"{name}={val.__name__}")
@@ -133,27 +149,18 @@ class tbl:
                 parts.append(f"{name}={val!r}")
         return hash("|".join(parts))
 
-    def _ensure_cached(self) -> Table | None:
-        kwargs = self.get_default_kwargs()
-        if kwargs is not None:
-            if self._cached_table is not None and self._cached_fingerprint == self._dependency_fingerprint():
-                return self._cached_table
-            self._cached_table = self(**kwargs)
-            self._cached_fingerprint = self._dependency_fingerprint()
-        return self._cached_table
-
     def __getattr__(self, name):
-        cached = self._ensure_cached()
-        if cached is None:
+        if self.args is None:
             raise AttributeError(
                 f"You seem to access an un-initialized table (on attribute '{name}'). "
                 f"This table requires explicit arguments and cannot be called implicitly."
             )
-        return getattr(cached, name)
+        return getattr(self(), name)
 
     def __repr__(self):
-        cached = self._ensure_cached()
-        return repr(cached) if cached else f"Table({self.name}) (uninitialized)"
+        if self.args is None:
+            return f"Table({self.name}) (uninitialized)"
+        return repr(self())
 
     def _repr_html_(self):
         return self.__getattr__('_repr_html_')()
