@@ -114,17 +114,14 @@ class Table:
 
 
     def _repr_html_(self) -> str | None:
-        try:
-            self.get()
-            cols = self.result.columns
-            types = self.result.types
-            rows = list(self.result.fetchmany(config.rows + 1))
-            truncated = len(rows) == (config.rows + 1)
-            if truncated:
-                rows = rows[:config.rows]
-            return result_to_html(cols, types, rows, truncated)
-        except Exception:
-            return None
+        self.get()
+        cols = self.result.columns
+        types = self.result.types
+        rows = list(self.result.fetchmany(config.rows + 1))
+        truncated = len(rows) == (config.rows + 1)
+        if truncated:
+            rows = rows[:config.rows]
+        return result_to_html(cols, types, rows, truncated)
 
     def __str__(self) -> str:
         if self.spec.is_adhoc:
