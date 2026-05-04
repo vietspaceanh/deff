@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .specs import TableSpec, extract_table_names, flatten_ctes
-from .context import build_context
+from .runtime import runtime, Graph
 
 COLORS = {
     "numeric": "#89b4fa",
@@ -35,7 +35,7 @@ def result_to_html(cols, types, rows, truncated) -> str:
     html += "</tr></thead><tbody>"
     for row in rows:
         html += "<tr>" + "".join(
-            f'<td style="color:{colors[i]};{sep}">{_escape_html(str(v)) if v is not None else ""}</td>'
+            f'<td style="color:{colors[i]};{sep}">{_escape_html(str(v)) if v is not None else "&nbsp;"}</td>'
             for i, v in enumerate(row)
         ) + "</tr>"
     html += "</tbody></table></div>"
@@ -47,7 +47,7 @@ def result_to_html(cols, types, rows, truncated) -> str:
 
 
 def generate_mermaid_code(table_spec: TableSpec) -> str:
-    ctx = build_context(table_spec)
+    ctx = runtime.graph(table_spec)
     target = table_spec.name
     lines = ["graph TD"]
 
@@ -57,18 +57,25 @@ def generate_mermaid_code(table_spec: TableSpec) -> str:
 
     for name in ctx.topological_order(target):
         spec = ctx.nodes[name]
+        if spec.is_cte:
+            continue
         label = _node_label(spec)
         if spec.ctes:
             _register_subgraph(name, spec, subgraphs, node_to_subgraph, parent_styles, label, lines)
-        direct_tables = extract_table_names(spec.parsed) if spec.ctes else set()
-        _add_dep_edges(name, label, spec, node_to_subgraph, direct_tables, lines)
+        for dep_name in ctx.edges.get(name, set()):
+            dep = ctx.nodes.get(dep_name)
+            if dep is None or dep.is_cte:
+                continue
+            if node_to_subgraph.get(name) and dep_name not in extract_table_names(spec.parsed):
+                continue
+            lines.append(f'    {dep.name}["{_node_label(dep)}"] --> {name}["{label}"]')
 
     highlighted = COLORS["highlighted_border"]
     for subgraph_id, all_ctes, sub_label, parent_specs in subgraphs.values():
         _write_subgraph_header(subgraph_id, sub_label, all_ctes, lines)
         _add_cte_internal_edges(subgraph_id, all_ctes, lines)
         _close_subgraph(subgraph_id, all_ctes, highlighted, lines)
-        _add_cte_external_deps(subgraph_id, parent_specs, node_to_subgraph, highlighted, lines)
+        _add_cte_external_deps(subgraph_id, parent_specs, highlighted, ctx, lines)
 
     for name in parent_styles:
         lines.append(f"    style {name} stroke-width:2px")
@@ -83,7 +90,10 @@ def _escape_html(s: str) -> str:
 
 def _node_label(spec: TableSpec) -> str:
     parts = spec.func_name.split("__", 1)
-    display = f"{parts[0]}.{parts[1]}" if len(parts) == 2 else parts[0]
+    if spec.is_cte:
+        display = parts[-1]
+    else:
+        display = f"{parts[0]}.{parts[1]}" if len(parts) == 2 else parts[0]
     if not spec.args:
         return f"<b>{display}<b>"
     named = []
@@ -99,22 +109,6 @@ def _node_label(spec: TableSpec) -> str:
     arg_block = "\n".join(named)
     formatted_args = f"<div style='text-align:left'><small><pre>{arg_block}</pre></small></div>"
     return f"`**{display}**\n{formatted_args}`"
-
-
-def _add_dep_edges(
-    name: str,
-    label: str,
-    spec: TableSpec,
-    node_to_subgraph: dict[str, str],
-    direct_tables: set[str],
-    lines: list[str],
-):
-    current_sg = node_to_subgraph.get(name)
-    for dep in spec.deps:
-        dep_label = _node_label(dep)
-        if current_sg and dep.name not in direct_tables:
-            continue
-        lines.append(f'    {dep.name}["{dep_label}"] --> {name}["{label}"]')
 
 
 def _register_subgraph(
@@ -172,23 +166,28 @@ def _add_cte_internal_edges(
 def _add_cte_external_deps(
     subgraph_id: str,
     parent_specs: list[TableSpec],
-    node_to_subgraph: dict[str, str],
     highlighted: str,
+    ctx: Graph,
     lines: list[str],
 ):
     link_idx = sum(1 for l in lines if "-->" in l or "-.->" in l)
     seen: set[tuple[str, str]] = set()
     for ps in parent_specs:
         for cte in flatten_ctes(ps.ctes):
-            cte_dep_names = {d.name for d in cte.deps}
-            for dep in ps.deps:
-                if dep.name not in cte_dep_names:
+            cte_direct = extract_table_names(cte.parsed)
+            cte_dep_names = ctx.edges.get(cte.name, set())
+            for dep_name in ctx.edges.get(ps.name, set()):
+                if dep_name not in cte_dep_names:
                     continue
-
-                edge = (dep.name, cte.name)
+                if dep_name not in cte_direct:
+                    continue
+                edge = (dep_name, cte.name)
                 if edge in seen:
                     continue
                 seen.add(edge)
+                dep = ctx.nodes.get(dep_name)
+                if dep is None or dep.is_cte:
+                    continue
                 lines.append(
                     f'    {dep.name}["{_node_label(dep)}"] -.-> {subgraph_id}__{cte.name}'
                 )

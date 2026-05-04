@@ -2,20 +2,15 @@ from __future__ import annotations
 
 import contextvars
 import inspect
+import types
 
-from .specs import TABLE_DEFS, TableSpec, clean_sql, extract_table_names, sanitize_alias
+from .runtime import runtime
+from .specs import TableSpec, clean_sql, extract_table_names, sanitize_alias
 from .table import Table
 
 composition_deps: contextvars.ContextVar[tuple[list, ...]] = contextvars.ContextVar(
     "composition_deps", default=()
 )
-
-
-def _qualified_name(func) -> str:
-    module = func.__module__.rsplit(".", 1)[-1]
-    if module == "__main__":
-        return func.__name__
-    return f"{module}__{func.__name__}"
 
 
 class tbl:
@@ -28,24 +23,24 @@ class tbl:
         self.func = func
         self.name = _qualified_name(func)
         self._cached_table: Table | None = None
+        self._cached_fingerprint: int | None = None
+        self._global_deps = _global_deps(func)
         self.__wrapped__ = func
         self.__name__ = func.__name__
         self.__doc__ = func.__doc__
 
         stack = composition_deps.get()
         self.is_local = bool(stack)
+        self._depth = len(stack)
 
         if not self.is_local:
-            TABLE_DEFS[self.name] = self
+            runtime.register(self.name, self)
 
     def __call__(self, *args, **kwargs):
         if self.func is None:
             func = args[0]
             self._init_from_func(func)
             return self
-
-        if not args and not kwargs and self._cached_table is not None:
-            return self._cached_table
 
         sig = inspect.signature(self.func)
         bound = sig.bind(*args, **kwargs)
@@ -55,10 +50,11 @@ class tbl:
         local_deps: list[Table] = []
         token = composition_deps.set(composition_deps.get() + (local_deps,))
         try:
-            sql = self.func(*args, **kwargs)
+            result = self.func(*args, **kwargs)
         finally:
             composition_deps.reset(token)
 
+        sql = f"SELECT * FROM {result}" if isinstance(result, Table) else result
         referenced = extract_table_names(clean_sql(sql))
 
         for val in all_args.values():
@@ -84,7 +80,7 @@ class tbl:
         if not self.is_local:
             self._last_args = all_args
             if table.name != self.name:
-                TABLE_DEFS[table.name] = spec
+                runtime.register(table.name, spec)
 
         stack = composition_deps.get()
         if stack:
@@ -106,8 +102,10 @@ class tbl:
             if self._cached_table is None:
                 self._cached_table = self()
             stack = composition_deps.get()
-            if stack and not any(d is self._cached_table for d in stack[-1]):
-                stack[-1].append(self._cached_table)
+            if stack:
+                target = stack[self._depth - 1]
+                if not any(d is self._cached_table for d in target):
+                    target.append(self._cached_table)
             return self._cached_table.name
 
         if self.get_default_kwargs() is None:
@@ -119,19 +117,37 @@ class tbl:
         cached = self._ensure_cached()
         return cached.name if cached is not None else self.name
 
+    def _dependency_fingerprint(self) -> int:
+        g = self.func.__globals__
+        parts = []
+        for name in self._global_deps:
+            val = g[name]
+            if isinstance(val, tbl):
+                t = val._ensure_cached()
+                parts.append(f"{name}={t.spec.sql if t else None}")
+            elif isinstance(val, types.ModuleType):
+                parts.append(f"{name}={val.__name__}")
+            elif hasattr(val, '__dict__'):
+                parts.append(f"{name}={sorted(val.__dict__.items())}")
+            else:
+                parts.append(f"{name}={val!r}")
+        return hash("|".join(parts))
+
     def _ensure_cached(self) -> Table | None:
-        if self._cached_table is None:
-            kwargs = self.get_default_kwargs()
-            if kwargs is not None:
-                self._cached_table = self(**kwargs)
+        kwargs = self.get_default_kwargs()
+        if kwargs is not None:
+            if self._cached_table is not None and self._cached_fingerprint == self._dependency_fingerprint():
+                return self._cached_table
+            self._cached_table = self(**kwargs)
+            self._cached_fingerprint = self._dependency_fingerprint()
         return self._cached_table
 
     def __getattr__(self, name):
         cached = self._ensure_cached()
         if cached is None:
             raise AttributeError(
-                f"'{type(self).__name__}' object has no attribute '{name}'. "
-                f"Table requires arguments and cannot be auto-initialized."
+                f"You seem to access an un-initialized table (on attribute '{name}'). "
+                f"This table requires explicit arguments and cannot be called implicitly."
             )
         return getattr(cached, name)
 
@@ -167,3 +183,22 @@ class tbl:
     @property
     def stats(self):
         return self.__getattr__('stats')
+
+
+def _qualified_name(func) -> str:
+    module = func.__module__.rsplit(".", 1)[-1]
+    if module == "__main__":
+        return func.__name__
+    return f"{module}__{func.__name__}"
+
+
+def _global_deps(func):
+    names = set()
+    stack = [func.__code__]
+    while stack:
+        c = stack.pop()
+        for x in c.co_consts:
+            if isinstance(x, types.CodeType):
+                stack.append(x)
+        names.update(n for n in c.co_names if n in func.__globals__)
+    return names
