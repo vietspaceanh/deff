@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from . import config
-from .specs import TABLE_DEFS, TableSpec, extract_table_names
-from .context import build_context
+from .runtime import runtime
+from .specs import TableSpec, extract_table_names
 from .runner import Runner
 from .render import generate_mermaid_code, result_to_html
 
@@ -44,7 +44,7 @@ class Table:
 
     @property
     def full_sql(self) -> str:
-        return ";\n\n".join(Runner(build_context(self.spec)).build_statements(self.name)) + ";"
+        return runtime.full_sql(self.spec)
 
     @property
     def graph(self):
@@ -69,10 +69,12 @@ class Table:
     def refresh(self):
         self.result = None
 
-    def get(self, config: dict | None = None):
+    def get(self):
         if self.result is not None:
             return self.result
-        self.result = Runner(build_context(self.spec, config)).get(self.name)
+        runner = Runner()
+        runner.sql(runtime.full_sql(self.spec))
+        self.result = runner.sql(f"TABLE {self.name}")
         return self.result
 
     def sql(self, query: str):
@@ -163,25 +165,28 @@ def sql(query, name=TMP_TABLE_NAME):
 
     resolved: list[TableSpec] = []
     refs = extract_table_names(query)
+    runner = Runner()
 
+    all_stmts: list[str] = []
+    seen: set[str] = set()
     for ref in refs:
-        entry = TABLE_DEFS.get(ref)
+        entry = runtime.resolve(ref)
         if entry is None:
             continue
         if isinstance(entry, TableSpec):
-            ctx = build_context(entry)
-            if ctx.nodes:
-                Runner(ctx).get(entry.name)
-            resolved.append(entry)
+            spec = entry
         else:
             table = entry()
-            resolved.append(table.spec)
-            if table.result is None:
-                ctx = build_context(table.spec)
-                if ctx.nodes:
-                    table.result = Runner(ctx).get(table.name)
+            spec = table.spec
+        resolved.append(spec)
+        for stmt in runtime.statements(spec):
+            if stmt not in seen:
+                seen.add(stmt)
+                all_stmts.append(stmt)
 
-    runner = Runner()
+    if all_stmts:
+        runner.sql(";\n\n".join(all_stmts) + ";")
+
     result = runner.sql(query)
     is_adhoc = (name == TMP_TABLE_NAME)
     spec = TableSpec(
@@ -190,5 +195,5 @@ def sql(query, name=TMP_TABLE_NAME):
         is_adhoc=is_adhoc,
     )
     if not is_adhoc:
-        TABLE_DEFS[name] = spec
+        runtime.register(name, spec)
     return Table(spec, result=result)

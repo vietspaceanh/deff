@@ -9,8 +9,6 @@ from dataclasses import dataclass, field
 
 from . import config
 
-TABLE_DEFS: dict = {}
-
 
 @dataclass
 class TableSpec:
@@ -75,12 +73,4 @@ def flatten_ctes(ctes: list[TableSpec]) -> list[TableSpec]:
         if cte.name not in seen:
             seen.add(cte.name)
             result.append(cte)
-    return result
-
-
-def collect_cte_deps(ctes: list[TableSpec]) -> set[str]:
-    result: set[str] = set()
-    for cte in ctes:
-        result.update(d.name for d in cte.deps)
-        result.update(collect_cte_deps(cte.ctes))
     return result
