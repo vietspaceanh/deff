@@ -25,7 +25,8 @@ TYPE_ROLES = {
 }
 
 
-def result_to_html(cols, types, rows, truncated) -> str:
+def result_to_html(result, max_rows) -> str:
+    cols, types, rows, truncated = _extract_preview(result, max_rows)
     colors = [COLORS[TYPE_ROLES.get(t, "default")] for t in types]
     border = COLORS["border"]
     html = f"""<style>
@@ -50,6 +51,36 @@ def result_to_html(cols, types, rows, truncated) -> str:
     elif rows:
         html += f"<em>({len(rows)} rows)</em>"
     return html
+
+
+def result_to_rich(result, max_rows):
+    import rich.table as rt
+    from rich.text import Text
+
+    cols, types, rows, truncated = _extract_preview(result, max_rows)
+
+    table = rt.Table()
+    for col, t in zip(cols, types):
+        color = COLORS[TYPE_ROLES.get(t, "default")]
+        header = Text.assemble(
+            (col, "bold"),
+            ("\n", ""),
+            (t, f"{color}"),
+        )
+        table.add_column(header, no_wrap=True)
+
+    for row in rows:
+        styled_row = []
+        for i, v in enumerate(row):
+            color = COLORS[TYPE_ROLES.get(types[i], "default")]
+            if v is None:
+                styled_row.append("")
+            else:
+                styled_row.append(Text(str(v), style=color))
+        table.add_row(*styled_row)
+    yield table
+    if truncated:
+        yield Text("(Showing first {} rows of many. Use .fetchall() for full data.)".format(len(rows)), style="italic dim")
 
 
 def generate_mermaid_code(table_spec: TableSpec) -> str:
@@ -88,7 +119,28 @@ def generate_mermaid_code(table_spec: TableSpec) -> str:
 
     return "\n".join(lines)
 
+
 # ───────────────────────────── Helper functions ───────────────────────────── #
+
+def _extract_preview(result, max_rows):
+    cols = result.columns
+    types = result.types
+    rows = list(result.fetchmany(max_rows + 1))
+    truncated = len(rows) == max_rows + 1
+    if truncated:
+        rows = rows[:max_rows]
+    return cols, types, rows, truncated
+
+
+def _extract_preview(result, max_rows=50):
+    cols = result.columns
+    types = result.types
+    rows = list(result.fetchmany(max_rows + 1))
+    truncated = len(rows) == max_rows + 1
+    if truncated:
+        rows = rows[:max_rows]
+    return cols, types, rows, truncated
+
 
 def _display_name(func_name: str) -> str:
     parts = func_name.split("__", 1)

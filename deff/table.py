@@ -6,7 +6,7 @@ from . import config
 from .specs import TableSpec, Query
 from .runtime import runtime
 from .runner import Runner
-from .render import generate_mermaid_code, result_to_html
+from .render import generate_mermaid_code, result_to_html, result_to_rich
 
 TMP_TABLE_NAME = 'current_table'
 func_refs: ContextVar[set[str] | None] = ContextVar("func_refs", default=None)
@@ -117,16 +117,13 @@ class Table:
         self.get()
         return self.result.fetchone()
 
-
     def _repr_html_(self) -> str | None:
         self.get()
-        cols = self.result.columns
-        types = self.result.types
-        rows = list(self.result.fetchmany(config.rows + 1))
-        truncated = len(rows) == (config.rows + 1)
-        if truncated:
-            rows = rows[:config.rows]
-        return result_to_html(cols, types, rows, truncated)
+        return result_to_html(self.result, config.rows)
+
+    def __rich_console__(self, *_):
+        self.get()
+        yield from result_to_rich(self.result, 50)
 
     def __str__(self) -> str:
         if self.spec.is_adhoc:
@@ -134,7 +131,6 @@ class Table:
         return self.name
 
     def __repr__(self) -> str:
-        self.get()
         args_str = ", ".join(f"{k}={v!r}" for k, v in self.args.items())
         return f"Table({self.func_name}({args_str}))"
 
