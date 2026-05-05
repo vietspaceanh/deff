@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import re
+import textwrap
 from dataclasses import replace
+
 import sqlglot
 
 from . import config
-from .specs import TableSpec, extract_table_names, flatten_ctes
+from .specs import Query, TableSpec, flatten_ctes
+
+_MARKER = "\x00"
+_TABLE_REF_RE = re.compile(_MARKER + r"(\w+)" + _MARKER)
 
 
 class Graph:
@@ -38,7 +44,7 @@ class Graph:
         self._process_ctes(spec)
 
     def _process_references(self, spec: TableSpec) -> None:
-        for ref in extract_table_names(spec.parsed):
+        for ref in spec.query.table_names:
             canonical_name = self._aliases.get(ref, ref)
             if canonical_name not in self.nodes:
                 resolved = self._resolve_ref(ref)
@@ -109,6 +115,17 @@ def _build_cte_exprs(ctes: list[TableSpec]) -> list:
     return exprs
 
 
+def _clean_sql(sql: str) -> str:
+    """Normalize SQL: strip --sql header, dedent, remove trailing semicolon."""
+    lines = sql.strip().split("\n")
+    if lines and lines[0].strip().startswith("--sql"):
+        lines = lines[1:]
+    result = textwrap.dedent("\n".join(lines)).strip()
+    if result.endswith(";"):
+        result = result[:-1].strip()
+    return result
+
+
 class Runtime:
     def __init__(self):
         self.tables: dict = {}
@@ -131,6 +148,34 @@ class Runtime:
 
     def resolve(self, name):
         return self.swaps.get(name) or self.tables.get(name)
+
+    def validate_sql(self, sql: str) -> Query:
+        """Check for bare registered table names, strip markers, normalize.
+
+        Identifies table references by parsing with sqlglot and checking
+        FROM/JOIN Table nodes and column qualifiers (e.g. transactions.*).
+        This avoids false positives from string literals or aliases.
+
+        Returns a ``Query`` with the cleaned SQL and optional lazy-parsed AST.
+        """
+        cleaned = _TABLE_REF_RE.sub("__TBL_SAFE__", sql)
+        try:
+            parsed = sqlglot.parse_one(cleaned, dialect=config.dialect)
+            for identifier in parsed.find_all(sqlglot.exp.Identifier):
+                parent_name = type(identifier.parent).__name__
+                arg_key = identifier.arg_key
+                # Table in FROM/JOIN, or table qualifier in col ref like transactions.col / transactions.*
+                if (parent_name == "Table" and arg_key == "this") or (
+                    parent_name == "Column" and arg_key == "table"
+                ):
+                    if identifier.name in self.tables:
+                        raise ValueError(
+                            f"Table '{identifier.name}' is a registered table but was referenced as a raw string. "
+                            f"Use f'...{{{identifier.name}}}...' to reference it by variable."
+                        )
+        except sqlglot.errors.ParseError:
+            pass
+        return Query(sql=_clean_sql(_TABLE_REF_RE.sub(r"\1", sql)))
 
     def graph(self, spec: TableSpec) -> Graph:
         key = id(spec)
@@ -161,6 +206,11 @@ class Runtime:
                 spec = replacement().spec
             self.swaps[name] = replace(spec, name=name, deps=list(spec.deps))
         self._clear_caches()
+
+
+def mark_ref(name: str) -> str:
+    """Wrap a table name so validate_sql can recognize it as a variable ref."""
+    return f"{_MARKER}{name}{_MARKER}"
 
 
 runtime = Runtime()
