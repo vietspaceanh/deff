@@ -1,15 +1,11 @@
 from __future__ import annotations
 
-import textwrap
-from contextvars import ContextVar
 from dataclasses import replace
 
 import sqlglot
 
 from . import config
-from .specs import Query, TableSpec, flatten_ctes
-
-FSTRING_REFS: ContextVar[set[str] | None] = ContextVar("_fstring_refs", default=None)
+from .specs import TableSpec, flatten_ctes
 
 
 class Graph:
@@ -114,17 +110,6 @@ def _build_cte_exprs(ctes: list[TableSpec]) -> list:
     return exprs
 
 
-def _clean_sql(sql: str) -> str:
-    """Normalize SQL: strip '--sql' header, dedent, remove trailing semicolon."""
-    lines = sql.strip().split("\n")
-    if lines and lines[0].strip().startswith("--sql"):
-        lines = lines[1:]
-    result = textwrap.dedent("\n".join(lines)).strip()
-    if result.endswith(";"):
-        result = result[:-1].strip()
-    return result
-
-
 class Runtime:
     def __init__(self):
         self.tables: dict = {}
@@ -147,31 +132,6 @@ class Runtime:
 
     def resolve(self, name):
         return self.swaps.get(name) or self.tables.get(name)
-
-    def validate_sql(self, sql: str, fstring_refs: set[str] | None = None) -> Query:
-        """Check for bare registered table names, normalize.
-
-        Uses `fstring_refs` (collected from `__format__` calls inside a `@tbl` function)
-        to distinguish variable references from bare string references to registered tables.
-        """
-        real_sql = _clean_sql(sql)
-        query = Query(real_sql)
-        if fstring_refs is not None:
-            _local_names = {ref.split("__", 1)[-1] for ref in fstring_refs if ref}
-            for identifier in query.parsed.find_all(sqlglot.exp.Identifier):
-                parent_name = type(identifier.parent).__name__
-                arg_key = identifier.arg_key
-                # Table in FROM/JOIN, or table qualifier in col ref like transactions.col / transactions.*
-                if (parent_name == "Table" and arg_key == "this") or (
-                    parent_name == "Column" and arg_key == "table"
-                ):
-                    is_known = identifier.name in self.tables or identifier.name in _local_names
-                    if is_known and identifier.name not in fstring_refs:
-                        raise ValueError(
-                            f"Table '{identifier.name}' is a registered table but was referenced as a raw string. "
-                            f"Use f'...{{{identifier.name}}}...' to reference it by variable."
-                        )
-        return query
 
     def graph(self, spec: TableSpec) -> Graph:
         key = id(spec)

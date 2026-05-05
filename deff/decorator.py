@@ -4,9 +4,9 @@ import contextvars
 import inspect
 import types
 
-from .runtime import runtime, FSTRING_REFS
-from .specs import TableSpec, sanitize_alias
-from .table import Table
+from .runtime import runtime
+from .specs import Query, TableSpec, sanitize_alias
+from .table import Table, func_refs
 
 composition_deps: contextvars.ContextVar[tuple[list, ...]] = contextvars.ContextVar(
     "composition_deps", default=()
@@ -59,18 +59,19 @@ class tbl:
         local_deps: list[Table] = []
         token = composition_deps.set(composition_deps.get() + (local_deps,))
         fstring_refs: set[str] = set()
-        refs_token = FSTRING_REFS.set(fstring_refs)
+        refs_token = func_refs.set(fstring_refs)
         try:
             result = self.func(*args, **kwargs)
         finally:
-            FSTRING_REFS.reset(refs_token)
+            func_refs.reset(refs_token)
             composition_deps.reset(token)
 
         # Resolve references among deps
         raw_sql = f"SELECT * FROM {result}" if isinstance(result, Table) else result
         if isinstance(result, Table):
             fstring_refs.add(result.name)
-        query = runtime.validate_sql(raw_sql, fstring_refs=fstring_refs)
+        query = Query(raw_sql, func_name=self.func.__name__)
+        _validate_bare_refs(query, fstring_refs)
         referenced = query.table_names
 
         for val in all_args.values():
@@ -127,7 +128,7 @@ class tbl:
                 f"and cannot be used in f-strings."
             )
         name = self().name
-        ctx = FSTRING_REFS.get()
+        ctx = func_refs.get()
         if ctx is not None:
             ctx.add(name)
         return name
@@ -227,3 +228,20 @@ def _global_deps(func):
                 stack.append(x)
         names.update(n for n in c.co_names if n in func.__globals__)
     return names
+
+
+def _validate_bare_refs(query: Query, fstring_refs: set[str]) -> None:
+    """Make sure the table refs in query are functions, not bare strings."""
+    refs_in_sql = query.table_references
+    known_names = {ref.split("__", 1)[-1] for ref in fstring_refs if ref}
+    registered_bare = {k.split("__", 1)[-1] for k in runtime.tables}
+    all_known = known_names | registered_bare
+    bare_in_sql = refs_in_sql - fstring_refs
+    invalid = [n for n in bare_in_sql if n in all_known]
+    if invalid:
+        msg = "; ".join(
+            f"Table '{n}' in function '{query.func_name}' was referenced as a raw string. "
+            f"Use f'...{{{n}}}...' to reference by variable."
+            for n in invalid
+        )
+        raise ValueError(msg)
