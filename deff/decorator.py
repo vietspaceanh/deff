@@ -4,6 +4,7 @@ import contextvars
 import functools
 import inspect
 import types
+import typing
 
 from .runtime import runtime
 from .specs import Query, TableSpec, sanitize_alias
@@ -14,13 +15,10 @@ composition_deps: contextvars.ContextVar[tuple[list, ...]] = contextvars.Context
 )
     
 
-def tbl(func=None):
-    if func is None:
-        return lambda f: tbl(f)
-
+def tbl(func) -> Table:
     tf = TableFunction(func)
     functools.update_wrapper(tf, func)
-    return tf
+    return typing.cast(Table, tf)
 
 
 class TableFunction:
@@ -199,26 +197,6 @@ class TableFunction:
 
     def __or__(self, query: str):
         return self.__getattr__('__or__')(query)
-
-    @property
-    def columns(self):
-        return self.__getattr__('columns')
-
-    @property
-    def graph(self):
-        return self.__getattr__('graph')
-
-    @property
-    def df(self):
-        return self.__getattr__('df')
-
-    @property
-    def schema(self):
-        return self.__getattr__('schema')
-
-    @property
-    def stats(self):
-        return self.__getattr__('stats')
 
 
 def _qualified_name(func) -> str:

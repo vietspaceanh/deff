@@ -105,18 +105,6 @@ class Table:
         """Quickly get columns (as an expression)."""
         return self.__or__(f"SELECT {cols}")
 
-    def fetchall(self):
-        self.get()
-        return self.result.fetchall()
-
-    def fetchmany(self, n):
-        self.get()
-        return self.result.fetchmany(n)
-
-    def fetchone(self):
-        self.get()
-        return self.result.fetchone()
-
     def _repr_html_(self) -> str | None:
         self.get()
         return result_to_html(self.result, config.rows)
