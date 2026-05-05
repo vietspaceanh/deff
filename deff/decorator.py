@@ -4,9 +4,8 @@ import contextvars
 import inspect
 import types
 
-from .runtime import runtime
+from .runtime import runtime, FSTRING_REFS
 from .specs import TableSpec, sanitize_alias
-from .runtime import mark_ref
 from .table import Table
 
 composition_deps: contextvars.ContextVar[tuple[list, ...]] = contextvars.ContextVar(
@@ -56,17 +55,22 @@ class tbl:
         else:
             is_default_call = False
 
-        # Run function (captures local dep tables)
+        # Run function (captures local dep tables and f-string refs)
         local_deps: list[Table] = []
         token = composition_deps.set(composition_deps.get() + (local_deps,))
+        fstring_refs: set[str] = set()
+        refs_token = FSTRING_REFS.set(fstring_refs)
         try:
             result = self.func(*args, **kwargs)
         finally:
+            FSTRING_REFS.reset(refs_token)
             composition_deps.reset(token)
 
         # Resolve references among deps
         raw_sql = f"SELECT * FROM {result}" if isinstance(result, Table) else result
-        query = runtime.validate_sql(raw_sql)
+        if isinstance(result, Table):
+            fstring_refs.add(result.name)
+        query = runtime.validate_sql(raw_sql, fstring_refs=fstring_refs)
         referenced = query.table_names
 
         for val in all_args.values():
@@ -122,7 +126,11 @@ class tbl:
                 f"Table '{self.name}' requires explicit arguments "
                 f"and cannot be used in f-strings."
             )
-        return mark_ref(self().name)
+        name = self().name
+        ctx = FSTRING_REFS.get()
+        if ctx is not None:
+            ctx.add(name)
+        return name
 
     def __str__(self):
         if self.is_local:
@@ -204,8 +212,8 @@ class tbl:
 
 def _qualified_name(func) -> str:
     module = func.__module__.rsplit(".", 1)[-1]
-    if module == "__main__":
-        return func.__name__
+    if module == "__main__" or module == "__mp_main__":
+        return f"_main__{func.__name__}"
     return f"{module}__{func.__name__}"
 
 

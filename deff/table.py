@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from . import config
 from .specs import TableSpec
-from .runtime import runtime, mark_ref
+from .runtime import runtime, FSTRING_REFS
 from .runner import Runner
 from .render import generate_mermaid_code, result_to_html
 
@@ -157,7 +157,10 @@ class Table:
         return True
 
     def __format__(self, format_spec):
-        return mark_ref(self.name)
+        ctx = FSTRING_REFS.get()
+        if ctx is not None:
+            ctx.add(self.name)
+        return self.name
 
 
 def sql(query, name=TMP_TABLE_NAME):

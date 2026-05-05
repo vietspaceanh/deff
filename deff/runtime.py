@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import re
 import textwrap
+from contextvars import ContextVar
 from dataclasses import replace
 
 import sqlglot
@@ -9,8 +9,7 @@ import sqlglot
 from . import config
 from .specs import Query, TableSpec, flatten_ctes
 
-_MARKER = "\x00"
-_TABLE_REF_RE = re.compile(_MARKER + r"(\w+)" + _MARKER)
+FSTRING_REFS: ContextVar[set[str] | None] = ContextVar("_fstring_refs", default=None)
 
 
 class Graph:
@@ -116,7 +115,7 @@ def _build_cte_exprs(ctes: list[TableSpec]) -> list:
 
 
 def _clean_sql(sql: str) -> str:
-    """Normalize SQL: strip --sql header, dedent, remove trailing semicolon."""
+    """Normalize SQL: strip '--sql' header, dedent, remove trailing semicolon."""
     lines = sql.strip().split("\n")
     if lines and lines[0].strip().startswith("--sql"):
         lines = lines[1:]
@@ -149,33 +148,30 @@ class Runtime:
     def resolve(self, name):
         return self.swaps.get(name) or self.tables.get(name)
 
-    def validate_sql(self, sql: str) -> Query:
-        """Check for bare registered table names, strip markers, normalize.
+    def validate_sql(self, sql: str, fstring_refs: set[str] | None = None) -> Query:
+        """Check for bare registered table names, normalize.
 
-        Identifies table references by parsing with sqlglot and checking
-        FROM/JOIN Table nodes and column qualifiers (e.g. transactions.*).
-        This avoids false positives from string literals or aliases.
-
-        Returns a ``Query`` with the cleaned SQL and optional lazy-parsed AST.
+        Uses `fstring_refs` (collected from `__format__` calls inside a `@tbl` function)
+        to distinguish variable references from bare string references to registered tables.
         """
-        cleaned = _TABLE_REF_RE.sub("__TBL_SAFE__", sql)
-        try:
-            parsed = sqlglot.parse_one(cleaned, dialect=config.dialect)
-            for identifier in parsed.find_all(sqlglot.exp.Identifier):
+        real_sql = _clean_sql(sql)
+        query = Query(real_sql)
+        if fstring_refs is not None:
+            _local_names = {ref.split("__", 1)[-1] for ref in fstring_refs if ref}
+            for identifier in query.parsed.find_all(sqlglot.exp.Identifier):
                 parent_name = type(identifier.parent).__name__
                 arg_key = identifier.arg_key
                 # Table in FROM/JOIN, or table qualifier in col ref like transactions.col / transactions.*
                 if (parent_name == "Table" and arg_key == "this") or (
                     parent_name == "Column" and arg_key == "table"
                 ):
-                    if identifier.name in self.tables:
+                    is_known = identifier.name in self.tables or identifier.name in _local_names
+                    if is_known and identifier.name not in fstring_refs:
                         raise ValueError(
                             f"Table '{identifier.name}' is a registered table but was referenced as a raw string. "
                             f"Use f'...{{{identifier.name}}}...' to reference it by variable."
                         )
-        except sqlglot.errors.ParseError:
-            pass
-        return Query(sql=_clean_sql(_TABLE_REF_RE.sub(r"\1", sql)))
+        return query
 
     def graph(self, spec: TableSpec) -> Graph:
         key = id(spec)
@@ -206,11 +202,6 @@ class Runtime:
                 spec = replacement().spec
             self.swaps[name] = replace(spec, name=name, deps=list(spec.deps))
         self._clear_caches()
-
-
-def mark_ref(name: str) -> str:
-    """Wrap a table name so validate_sql can recognize it as a variable ref."""
-    return f"{_MARKER}{name}{_MARKER}"
 
 
 runtime = Runtime()
