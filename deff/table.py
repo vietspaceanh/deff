@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from . import config
-from .runtime import runtime
-from .specs import TableSpec, extract_table_names
+from .specs import TableSpec
+from .runtime import runtime, mark_ref
 from .runner import Runner
 from .render import generate_mermaid_code, result_to_html
 
@@ -79,20 +79,22 @@ class Table:
 
     def sql(self, query: str):
         self.get()
-        result = Runner().sql(query)
+        query = runtime.validate_sql(query)
+        result = Runner().sql(query.sql)
+        spec = TableSpec(
+            query=query,
+            func_name=TMP_TABLE_NAME,
+            name=TMP_TABLE_NAME,
+            deps=list(self.spec.deps),
+            is_adhoc=True,
+        )
         return Table(
-            TableSpec(
-                sql=query,
-                func_name=TMP_TABLE_NAME,
-                name=TMP_TABLE_NAME,
-                deps=list(self.spec.deps),
-                is_adhoc=True,
-            ),
+            spec,
             result=result,
         )
 
     def __or__(self, query: str):
-        source = f"({self.raw_sql})" if self.spec.is_adhoc else self.name
+        source = f"({self.raw_sql})" if self.spec.is_adhoc else f"{self}"
         completed_query = f"FROM {source} {query}"
         return self.sql(completed_query)
     
@@ -154,14 +156,19 @@ class Table:
     def __bool__(self):
         return True
 
+    def __format__(self, format_spec):
+        return mark_ref(self.name)
+
 
 def sql(query, name=TMP_TABLE_NAME):
     if isinstance(query, Table):
         query.get()
         return query
 
+    query = runtime.validate_sql(query)
+
     resolved: list[TableSpec] = []
-    refs = extract_table_names(query)
+    refs = query.table_names
     runner = Runner()
 
     all_stmts: list[str] = []
@@ -185,10 +192,10 @@ def sql(query, name=TMP_TABLE_NAME):
     if all_stmts:
         runner.sql(";\n\n".join(all_stmts) + ";")
 
-    result = runner.sql(query)
+    result = runner.sql(query.sql)
     is_adhoc = (name == TMP_TABLE_NAME)
     spec = TableSpec(
-        sql=query, func_name=name, args={}, name=name,
+        query=query, func_name=name, args={}, name=name,
         deps=resolved,
         is_adhoc=is_adhoc,
     )

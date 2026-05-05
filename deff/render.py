@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .specs import TableSpec, extract_table_names, flatten_ctes
+from .specs import TableSpec, flatten_ctes
 from .runtime import runtime, Graph
 
 COLORS = {
@@ -72,7 +72,7 @@ def generate_mermaid_code(table_spec: TableSpec) -> str:
             dep = ctx.nodes.get(dep_name)
             if dep is None or dep.is_cte:
                 continue
-            if node_to_subgraph.get(name) and dep_name not in extract_table_names(spec.parsed):
+            if node_to_subgraph.get(name) and dep_name not in spec.query.table_names:
                 continue
             lines.append(f'    {dep.name}["{_node_label(dep)}"] --> {name}["{label}"]')
 
@@ -167,7 +167,7 @@ def _add_cte_internal_edges(
 ):
     cte_names = {c.name for c in all_ctes}
     for cte in all_ctes:
-        for ref in extract_table_names(cte.parsed) & cte_names:
+        for ref in cte.query.table_names & cte_names:
             if ref != cte.name:
                 lines.append(f"        {subgraph_id}__{ref} --> {subgraph_id}__{cte.name}")
 
@@ -183,7 +183,7 @@ def _add_cte_external_deps(
     seen: set[tuple[str, str]] = set()
     for ps in parent_specs:
         for cte in flatten_ctes(ps.ctes):
-            cte_direct = extract_table_names(cte.parsed)
+            cte_direct = cte.query.table_names
             for dep_name in ctx.edges.get(ps.name, set()):
                 if dep_name not in cte_direct:
                     continue

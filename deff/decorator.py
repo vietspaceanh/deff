@@ -5,7 +5,8 @@ import inspect
 import types
 
 from .runtime import runtime
-from .specs import TableSpec, clean_sql, extract_table_names, sanitize_alias
+from .specs import TableSpec, sanitize_alias
+from .runtime import mark_ref
 from .table import Table
 
 composition_deps: contextvars.ContextVar[tuple[list, ...]] = contextvars.ContextVar(
@@ -64,8 +65,9 @@ class tbl:
             composition_deps.reset(token)
 
         # Resolve references among deps
-        sql = f"SELECT * FROM {result}" if isinstance(result, Table) else result
-        referenced = extract_table_names(clean_sql(sql))
+        raw_sql = f"SELECT * FROM {result}" if isinstance(result, Table) else result
+        query = runtime.validate_sql(raw_sql)
+        referenced = query.table_names
 
         for val in all_args.values():
             if isinstance(val, Table):
@@ -77,7 +79,7 @@ class tbl:
         name = sanitize_alias(self.name, all_args)
 
         spec = TableSpec(
-            sql=clean_sql(sql),
+            query=query,
             func_name=self.name,
             name=name,
             args=all_args,
@@ -113,6 +115,14 @@ class tbl:
             return dict(bound.arguments)
         except TypeError:
             return None
+
+    def __format__(self, format_spec):
+        if self.args is None:
+            raise ValueError(
+                f"Table '{self.name}' requires explicit arguments "
+                f"and cannot be used in f-strings."
+            )
+        return mark_ref(self().name)
 
     def __str__(self):
         if self.is_local:
