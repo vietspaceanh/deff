@@ -92,7 +92,11 @@ def generate_mermaid_code(table_spec: TableSpec) -> str:
 
 def _display_name(func_name: str) -> str:
     parts = func_name.split("__", 1)
-    return f"{parts[0]}.{parts[1]}" if len(parts) == 2 else parts[0]
+    if len(parts) == 2:
+        if parts[0] == "_main":
+            return parts[1]
+        return f"{parts[0]}.{parts[1]}"
+    return parts[0]
 
 
 def _escape_html(s: str) -> str:
@@ -110,7 +114,13 @@ def _node_label(spec: TableSpec) -> str:
     for k, v in spec.args.items():
         if hasattr(v, "func_name"):
             p = v.func_name.split("__", 1)
-            val = f"{p[0]}.{p[1]}" if len(p) == 2 else p[0]
+            if len(p) == 2:
+                if p[0] == "_main":
+                    val = p[1]
+                else:
+                    val = f"{p[0]}.{p[1]}"
+            else:
+                val = p[0]
         elif hasattr(v, "name"):
             val = v.name
         else:
