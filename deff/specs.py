@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import textwrap
 from dataclasses import dataclass, field
 
 import sqlglot
@@ -29,9 +30,29 @@ class TableSpec:
 
 
 class Query:
-    def __init__(self, sql: str):
-        self.sql = sql
-        self.parsed = sqlglot.parse_one(self.sql, dialect=config.dialect)
+    def __init__(self, sql: str, func_name: str | None = None):
+        self.sql = self._clean_sql(sql)
+        self.func_name = func_name
+        
+        try:
+            self.parsed = sqlglot.parse_one(self.sql, dialect=config.dialect)
+        except Exception as exception:
+            msg = (
+                f"Error when parsing query of '{func_name}':" if func_name else "Query parsing error:"
+            )
+            exception.args = (f"{msg}\n{exception.args[0]}", )
+            raise
+
+    @staticmethod
+    def _clean_sql(sql: str) -> str:
+        """Normalize SQL: strip '--sql' header, dedent, remove trailing semicolon."""
+        lines = sql.strip().split("\n")
+        if lines and lines[0].strip().startswith("--sql"):
+            lines = lines[1:]
+        result = textwrap.dedent("\n".join(lines)).strip()
+        if result.endswith(";"):
+            result = result[:-1].strip()
+        return result
 
     @property
     def table_references(self) -> set[str]:

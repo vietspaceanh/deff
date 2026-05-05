@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from contextvars import ContextVar
+
 from . import config
-from .specs import TableSpec
-from .runtime import runtime, FSTRING_REFS
+from .specs import TableSpec, Query
+from .runtime import runtime
 from .runner import Runner
 from .render import generate_mermaid_code, result_to_html
 
 TMP_TABLE_NAME = 'current_table'
+func_refs: ContextVar[set[str] | None] = ContextVar("func_refs", default=None)
 
 
 class Table:
@@ -79,7 +82,7 @@ class Table:
 
     def sql(self, query: str):
         self.get()
-        query = runtime.validate_sql(query)
+        query = Query(query)
         result = Runner().sql(query.sql)
         spec = TableSpec(
             query=query,
@@ -157,7 +160,7 @@ class Table:
         return True
 
     def __format__(self, format_spec):
-        ctx = FSTRING_REFS.get()
+        ctx = func_refs.get()
         if ctx is not None:
             ctx.add(self.name)
         return self.name
@@ -168,7 +171,7 @@ def sql(query, name=TMP_TABLE_NAME):
         query.get()
         return query
 
-    query = runtime.validate_sql(query)
+    query = Query(query)
 
     resolved: list[TableSpec] = []
     refs = query.table_names
