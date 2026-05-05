@@ -186,10 +186,13 @@ class TableFunction:
     def __repr__(self):
         if self.args is None:
             return f"Table({self.name}) (uninitialized)"
-        return repr(self())
+        return f"Table({self.name}({self.args}))"
 
     def _repr_html_(self):
         return self.__getattr__('_repr_html_')()
+
+    def __rich_console__(self, console, options):
+        return self().__rich_console__(console, options)
 
     def __getitem__(self, cols: str):
         return self.__getattr__('__getitem__')(cols)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-
+from pprint import pformat
 import sqlglot
 
 from . import config
@@ -162,6 +162,11 @@ class Runtime:
                 spec = replacement().spec
             self.swaps[name] = replace(spec, name=name, deps=list(spec.deps))
         self._clear_caches()
+        
+    def __repr__(self):
+        swaps_str = pformat(dict(self.swaps), indent=2)
+        tables_str = pformat(dict(self.tables), indent=2)
+        return f"Runtime(\n  swap={swaps_str},\n  tables={tables_str},\n)"
 
 
 runtime = Runtime()
