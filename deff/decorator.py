@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextvars
+import functools
 import inspect
 import types
 
@@ -11,9 +12,18 @@ from .table import Table, func_refs
 composition_deps: contextvars.ContextVar[tuple[list, ...]] = contextvars.ContextVar(
     "composition_deps", default=()
 )
+    
+
+def tbl(func=None):
+    if func is None:
+        return lambda f: tbl(f)
+
+    tf = TableFunction(func)
+    functools.update_wrapper(tf, func)
+    return tf
 
 
-class tbl:
+class TableFunction:
     def __init__(self, func=None):
         self.func = func
         if func is not None:
@@ -25,9 +35,6 @@ class tbl:
         self._cached_table: Table | None = None
         self._cached_fingerprint: int | None = None
         self._global_deps = _global_deps(func)
-        self.__wrapped__ = func
-        self.__name__ = func.__name__
-        self.__doc__ = func.__doc__
 
         stack = composition_deps.get()
         self.is_local = bool(stack)
@@ -157,7 +164,7 @@ class tbl:
         parts = []
         for name in self._global_deps:
             val = g[name]
-            if isinstance(val, tbl):
+            if isinstance(val, TableFunction):
                 t = val() if val.args is not None else None
                 parts.append(f"{name}={t.spec.sql if t else None}")
             elif isinstance(val, types.ModuleType):
