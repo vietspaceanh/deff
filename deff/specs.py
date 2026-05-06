@@ -37,10 +37,7 @@ class Query:
         try:
             self.parsed = sqlglot.parse_one(self.sql, dialect=config.dialect)
         except Exception as exception:
-            msg = (
-                f"Error when parsing query of '{func_name}':" if func_name else "Query parsing error:"
-            )
-            exception.args = (f"{msg}\n{exception.args[0]}", )
+            exception.args = (format_error(exception.errors[0], self.sql, self.func_name), )
             raise
 
     @staticmethod
@@ -97,3 +94,41 @@ def flatten_ctes(ctes: list[TableSpec]) -> list[TableSpec]:
             seen.add(cte.name)
             result.append(cte)
     return result
+
+
+def format_error(err: dict, query: str = None, func_name: str = None) -> str:
+    """Return a colorized error string with ±10 context lines."""
+    RED = '\033[31m'
+    BLUE = '\033[34m'
+    GREY = '\033[90m'
+    BOLD = '\033[1m'
+    RESET = '\033[0m'
+    
+    lines_out = []
+    lines_out.append(
+        f"{RED}{err['description']} (line {err['line']}, col {err['col']}){RESET}"
+        f"\nTable: {BOLD}{BLUE}{func_name}{RESET}" if func_name else ""
+    )
+
+    if not query:
+        ctx = err['start_context'] + f"{RED}{BOLD}{err['highlight']}{RESET}" + err['end_context']
+        lines_out.append(f"  {ctx}")
+        return '\n'.join(lines_out)
+
+    lines = query.split('\n')
+    line_idx = err['line'] - 1
+    start = max(0, line_idx - 10)
+    end = min(len(lines), line_idx + 11)
+
+    for i in range(start, end):
+        line = lines[i]
+        line_num = i + 1
+        prefix = f"{line_num:4d} | "
+        if line_num == err['line']:
+            lines_out.append(f"{prefix}{BOLD}{line}{RESET}")
+            caret = ' ' * (len(prefix) + err['col'] - 1) + '^'
+            lines_out.append(f"{RED}{BOLD}{caret}{RESET}")
+        else:
+            lines_out.append(f"{GREY}{prefix}{RESET}{line}{RESET}")
+
+    return '\n'.join(lines_out)
