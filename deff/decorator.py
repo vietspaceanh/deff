@@ -13,12 +13,18 @@ from .table import Table, validate_bare_refs
 composition_deps: contextvars.ContextVar[tuple[list, ...]] = contextvars.ContextVar(
     "composition_deps", default=()
 )
-    
 
-def tbl(func) -> Table:
+P = typing.ParamSpec("P")
+R = typing.TypeVar("R", bound=str | Table)
+if typing.TYPE_CHECKING:
+    class _TblResult(Table, typing.Generic[P]):
+        def __call__(self, *args: P.args, **kwargs: P.kwargs) -> Table: ...
+
+
+def tbl(func: typing.Callable[P, R]) -> _TblResult[P]:
     tf = TableFunction(func)
     functools.update_wrapper(tf, func)
-    return typing.cast(Table, tf)
+    return tf
 
 
 class TableFunction:
