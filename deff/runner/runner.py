@@ -12,6 +12,8 @@ class Runner:
         if self.dialect == "duckdb":
             import duckdb
             from .duckdb import DuckDBResult
+            if global_config.memory_limit:
+                duckdb.sql(f"SET memory_limit = '{global_config.memory_limit}'")
             return DuckDBResult(duckdb.sql(query))
         if self.dialect == "spark":
             from pyspark.sql import SparkSession
