@@ -39,8 +39,11 @@ class Graph:
         self._process_ctes(spec)
 
     def _process_references(self, spec: TableSpec) -> None:
+        cte_names = {c.name for c in spec.ctes}
         for ref in spec.query.table_names:
             canonical_name = self._aliases.get(ref, ref)
+            if canonical_name in cte_names:
+                continue
             if canonical_name not in self.nodes:
                 resolved = self._resolve_ref(ref)
                 if resolved is not None:
