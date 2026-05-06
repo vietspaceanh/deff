@@ -182,22 +182,16 @@ class TableFunction:
         return getattr(self(), name)
 
     def __repr__(self):
-        exception = getattr(self, '_display_error', None)
-        if exception is not None:
-            del self._display_error
-            raise exception
-
         if self.args is None:
             return f"Table({self.name}) (uninitialized)"
-        return f"Table({self.name}({self.args}))"
+
+        table = self()
+        if table.result:
+            return f"Table({self.name}({self.args}))"
+        return ''
 
     def _repr_html_(self):
-        try:
-            return self.__getattr__('_repr_html_')()
-        except Exception as exception:
-            # Catch and store error to raise later in __repr__,
-            # since exceptions here won't be raised, it'll fallback to __repr__.
-            self._display_error = exception
+        return self.__getattr__('_repr_html_')()
 
     def __rich_console__(self, console, options):
         return self().__rich_console__(console, options)
