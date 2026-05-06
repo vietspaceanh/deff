@@ -76,10 +76,15 @@ class Graph:
 
     def statements(self, target: str) -> list[str]:
         ddl = "TEMP TABLE" if self._dialect == "duckdb" else "TEMPORARY VIEW"
-        return [f"CREATE OR REPLACE {ddl} {n} AS ({_inject_ctes(self.nodes[n], flatten_ctes(self.nodes[n].ctes), self._dialect)})" for n in self.topological_order(target)]
+        return [
+            f"CREATE OR REPLACE {ddl} {n} AS (\n"
+            f"{_inject_ctes(self.nodes[n], flatten_ctes(self.nodes[n].ctes), self._dialect)}\n"
+            f")"
+            for n in self.topological_order(target)
+        ]
 
     def sql(self, target: str) -> str:
-        return ";\n\n".join(self.statements(target)) + ";"
+        return ";".join(self.statements(target)) + ";"
 
 
 def _inject_ctes(spec: TableSpec, ctes: list[TableSpec], dialect: str) -> str:
