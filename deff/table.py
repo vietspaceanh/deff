@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from contextvars import ContextVar
-
 from . import config
 from .specs import TableSpec, Query
 from .runtime import runtime
@@ -9,7 +7,6 @@ from .runner import Runner
 from .render import generate_mermaid_code, result_to_html, result_to_rich
 
 TMP_TABLE_NAME = 'current_table'
-func_refs: ContextVar[set[str] | None] = ContextVar("func_refs", default=None)
 
 
 class Table:
@@ -83,6 +80,7 @@ class Table:
     def sql(self, query: str):
         self.get()
         query = Query(query)
+        validate_bare_refs(query)
         result = Runner().sql(query.sql)
         spec = TableSpec(
             query=query,
@@ -91,10 +89,7 @@ class Table:
             deps=list(self.spec.deps),
             is_adhoc=True,
         )
-        return Table(
-            spec,
-            result=result,
-        )
+        return Table(spec, result=result)
 
     def __or__(self, query: str):
         source = f"({self.raw_sql})" if self.spec.is_adhoc else f"{self}"
@@ -144,12 +139,23 @@ class Table:
         return True
 
     def __format__(self, format_spec):
-        ctx = func_refs.get()
-        if ctx is not None:
-            ctx.add(self.name)
         if self.spec.is_adhoc:
             return f"({self.raw_sql})"
         return self.name
+
+
+def validate_bare_refs(query: Query) -> None:
+    refs_in_sql = query.table_references
+    registered_bare = {k.split("__", 1)[-1] for k in runtime.tables}
+    invalid = [n for n in refs_in_sql if n in registered_bare]
+    if invalid:
+        msg = (
+            f"Table(s) {invalid} "
+            + (f"in function '{query.func_name}' " if query.func_name else "")
+            + f"was referenced as a raw string.\n"
+            + f"Use f'...{{<table_name>}}...' to reference by variable."
+        )
+        raise ValueError(msg)
 
 
 def sql(query, name=TMP_TABLE_NAME):
@@ -158,6 +164,7 @@ def sql(query, name=TMP_TABLE_NAME):
         return query
 
     query = Query(query)
+    validate_bare_refs(query)
 
     resolved: list[TableSpec] = []
     refs = query.table_names
