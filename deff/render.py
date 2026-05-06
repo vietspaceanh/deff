@@ -47,9 +47,9 @@ def result_to_html(result, max_rows) -> str:
         ) + "</tr>"
     html += "</tbody></table></div>"
     if truncated:
-        html += f"<em>... showing first {len(rows)} rows</em>"
+        html += f"<em>... showing first {len(rows)} rows of {len(cols)} columns</em>"
     elif rows:
-        html += f"<em>({len(rows)} rows)</em>"
+        html += f"<em>({len(rows)} rows of {len(cols)} columns)</em>"
     return html
 
 
@@ -80,7 +80,9 @@ def result_to_rich(result, max_rows):
         table.add_row(*styled_row)
     yield table
     if truncated:
-        yield Text("(Showing first {} rows of many. Use .fetchall() for full data.)".format(len(rows)), style="italic dim")
+        yield Text("(Showing first {} rows of {} columns. Use .fetchall() for full data.)".format(
+            len(rows), len(cols)
+        ), style="italic dim")
 
 
 def generate_mermaid_code(table_spec: TableSpec) -> str:
