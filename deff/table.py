@@ -147,6 +147,8 @@ class Table:
         ctx = func_refs.get()
         if ctx is not None:
             ctx.add(self.name)
+        if self.spec.is_adhoc:
+            return f"({self.raw_sql})"
         return self.name
 
 
