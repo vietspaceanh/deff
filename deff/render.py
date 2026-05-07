@@ -124,20 +124,10 @@ def generate_mermaid_code(table_spec: TableSpec) -> str:
 
 # ───────────────────────────── Helper functions ───────────────────────────── #
 
-def _extract_preview(result, max_rows):
-    cols = result.columns
-    types = result.types
-    rows = list(result.fetchmany(max_rows + 1))
-    truncated = len(rows) == max_rows + 1
-    if truncated:
-        rows = rows[:max_rows]
-    return cols, types, rows, truncated
-
-
 def _extract_preview(result, max_rows=50):
     cols = result.columns
     types = result.types
-    rows = list(result.fetchmany(max_rows + 1))
+    rows = list(result.fetchmany(max_rows + 1, fresh=True))
     truncated = len(rows) == max_rows + 1
     if truncated:
         rows = rows[:max_rows]

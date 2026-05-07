@@ -22,7 +22,7 @@ class SparkResult(Result):
     def fetchall(self) -> list[tuple]:
         return [tuple(row) for row in self._df.collect()]
 
-    def fetchmany(self, n: int) -> list[tuple]:
+    def fetchmany(self, n: int, fresh: bool = False) -> list[tuple]:
         return [tuple(row) for row in self._df.limit(n).collect()]
 
     def fetchone(self) -> tuple | None:

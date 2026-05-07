@@ -7,55 +7,58 @@ from .base import Result
 
 class DuckDBResult(Result):
     def __init__(self, query):
-        self.query = query
-        
-    @property
-    def relation(self):
-        return duckdb.sql(self.query)
+        self._query = query
+        self._relation = duckdb.sql(query)
 
     @property
     def columns(self) -> list[str]:
-        if self.relation is None:
+        if self._relation is None:
             return []
-        return self.relation.columns
+        return self._relation.columns
 
     @property
     def types(self) -> list[str]:
-        if self.relation is None:
+        if self._relation is None:
             return []
-        return [str(t).upper().split("(")[0] for t in self.relation.types]
+        return [str(t).upper().split("(")[0] for t in self._relation.types]
 
     def df(self):
         import pandas as pd
-        if self.relation is None:
+        rel = duckdb.sql(self._query)
+        if rel is None:
             return pd.DataFrame()
-        return self.relation.df()
+        return rel.df()
 
     def fetchall(self) -> list[tuple]:
-        if self.relation is None:
+        if self._relation is None:
             return []
-        return self.relation.fetchall()
+        return self._relation.fetchall()
 
-    def fetchmany(self, n: int) -> list[tuple]:
-        if self.relation is None:
+    def fetchmany(self, n: int, fresh: bool = False) -> list[tuple]:
+        if fresh:
+            rel = duckdb.sql(self._query)
+            if rel is None:
+                return []
+            return rel.fetchmany(n)
+        if self._relation is None:
             return []
-        return self.relation.fetchmany(n)
+        return self._relation.fetchmany(n)
 
     def fetchone(self) -> tuple | None:
-        if self.relation is None:
+        if self._relation is None:
             return None
-        return self.relation.fetchone()
+        return self._relation.fetchone()
 
     def __iter__(self):
-        if self.relation is None:
+        if self._relation is None:
             return
         while True:
-            row = self.relation.fetchone()
+            row = self._relation.fetchone()
             if row is None:
                 break
             yield row
 
     def __len__(self) -> int:
-        if self.relation is None:
+        if self._relation is None:
             return 0
-        return self.relation.shape[0]
+        return self._relation.shape[0]
