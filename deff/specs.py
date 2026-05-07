@@ -128,6 +128,8 @@ def format_error(err: dict, query: str = None, func_name: str = None) -> str:
             lines_out.append(f"{prefix}{BOLD}{line}{RESET}")
             caret = ' ' * (len(prefix) + err['col'] - 1) + '^'
             lines_out.append(f"{RED}{BOLD}{caret}{RESET}")
+        elif line_num == err['line'] - 1:
+            lines_out.append(f"{prefix}{BOLD}{line}{RESET}")
         else:
             lines_out.append(f"{GREY}{prefix}{RESET}{line}{RESET}")
 
