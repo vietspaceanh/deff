@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import pandas as pd
-
+from pyspark.sql import SparkSession
 from .base import Result
 
 
 class SparkResult(Result):
-    def __init__(self, df):
-        self._df = df
+    def __init__(self, query):
+        self._df = SparkSession.builder.getOrCreate().sql(query)
 
-    def df(self) -> pd.DataFrame:
+    def df(self):
         return self._df.toPandas()
 
     @property
