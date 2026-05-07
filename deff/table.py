@@ -52,7 +52,13 @@ class Table:
 
     @property
     def df(self):
-        return self.get().df()
+        if self.result is not None:
+            return self.result.df()
+        runner = Runner()
+        stmts = runtime.graph(self.spec).statements(self.spec.name, ignore_cached=True)
+        for stmt in stmts[:-1]:
+            runner.sql(stmt)
+        return runner.sql(self.spec.sql).df()
 
     @property
     def columns(self):
