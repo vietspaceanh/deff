@@ -13,15 +13,10 @@ from .table import Table, validate_bare_refs
 composition_deps: contextvars.ContextVar[tuple[list, ...]] = contextvars.ContextVar(
     "composition_deps", default=()
 )
-
 P = typing.ParamSpec("P")
-R = typing.TypeVar("R", bound=str | Table)
-if typing.TYPE_CHECKING:
-    class _TblResult(Table, typing.Generic[P]):
-        def __call__(self, *args: P.args, **kwargs: P.kwargs) -> Table: ...
 
 
-def tbl(func: typing.Callable[P, R]) -> _TblResult[P]:
+def tbl(func: typing.Callable[P, str]) -> typing.Callable[P, Table] | Table:
     tf = TableFunction(func)
     functools.update_wrapper(tf, func)
     return tf
@@ -47,7 +42,7 @@ class TableFunction:
         if not self.is_local:
             runtime.register(self.name, self)
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args, **kwargs) -> Table:
         if self.func is None:
             self._init_from_func(args[0])
             return self
@@ -173,15 +168,12 @@ class TableFunction:
     def __getattr__(self, name):
         if self.args is None:
             raise AttributeError(
-                f"You seem to access an un-initialized table (on attribute '{name}'). "
+                f"You seem to access an un-initialized table (on attribute '{name}').\n"
                 f"This table requires explicit arguments and cannot be called implicitly."
             )
         return getattr(self(), name)
 
     def __repr__(self):
-        if self.args is None:
-            return f"Table({self.name}) (uninitialized)"
-
         table = self()
         if table.result:
             return f"Table({self.name}({self.args}))"
