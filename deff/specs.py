@@ -53,14 +53,22 @@ class Query:
 
     @property
     def table_references(self) -> set[str]:
-        """All table-like identifiers: FROM/JOIN table names and column qualifiers."""
+        """All table-like identifiers: FROM/JOIN table names and column qualifiers.
+        Qualified names (e.g. favorita.stores) include the catalog/db prefix."""
         refs: set[str] = set()
         for identifier in self.parsed.find_all(sqlglot.exp.Identifier):
-            parent_name = type(identifier.parent).__name__
+            parent = identifier.parent
+            parent_name = type(parent).__name__
             arg_key = identifier.arg_key
-            if (parent_name == "Table" and arg_key == "this") or (
-                parent_name == "Column" and arg_key == "table"
-            ):
+            if parent_name == "Table" and arg_key == "this":
+                parts = []
+                if parent.catalog:
+                    parts.append(parent.catalog)
+                if parent.db:
+                    parts.append(parent.db)
+                parts.append(identifier.name)
+                refs.add(".".join(parts))
+            elif parent_name == "Column" and arg_key == "table":
                 refs.add(identifier.name)
         return refs
 
