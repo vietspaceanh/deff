@@ -44,7 +44,7 @@ class Table:
 
     @property
     def full_sql(self) -> str:
-        return runtime.full_sql(self.spec)
+        return runtime.get_full_sql(self.spec)
 
     @property
     def graph(self):
@@ -68,12 +68,13 @@ class Table:
 
     def refresh(self):
         self.result = None
+        runtime.materialized.discard(self.name)
 
     def get(self):
         if self.result is not None:
             return self.result
         runner = Runner()
-        runner.sql(runtime.full_sql(self.spec))
+        runner.sql(runtime.get_full_sql(self.spec, ignore_cached=True))
         self.result = runner.sql(f"TABLE {self.name}")
         return self.result
 

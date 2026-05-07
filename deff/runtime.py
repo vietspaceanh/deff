@@ -77,14 +77,29 @@ class Graph:
         visit(target)
         return order
 
-    def statements(self, target: str) -> list[str]:
+    def statements(self, target: str, ignore_cached: bool = False) -> list[str]:
         ddl = "TEMP TABLE" if self._dialect == "duckdb" else "TEMPORARY VIEW"
-        return [
-            f"CREATE OR REPLACE {ddl} {n} AS (\n"
-            f"{_inject_ctes(self.nodes[n], flatten_ctes(self.nodes[n].ctes), self._dialect)}\n"
-            f")"
-            for n in self.topological_order(target)
-        ]
+        if not ignore_cached:
+            return [
+                f"CREATE OR REPLACE {ddl} {n} AS (\n"
+                f"{_inject_ctes(self.nodes[n], flatten_ctes(self.nodes[n].ctes), self._dialect)}\n"
+                f")"
+                for n in self.topological_order(target)
+            ]
+        result = []
+        stale = False
+        for n in self.topological_order(target):
+            if n not in self._runtime.materialized:
+                stale = True
+            if stale or n == target:
+                result.append(
+                    f"CREATE OR REPLACE {ddl} {n} AS (\n"
+                    f"{_inject_ctes(self.nodes[n], flatten_ctes(self.nodes[n].ctes), self._dialect)}\n"
+                    f")"
+                )
+                if n != target:
+                    self._runtime.materialized.add(n)
+        return result
 
     def sql(self, target: str) -> str:
         return ";".join(self.statements(target)) + ";"
@@ -122,10 +137,12 @@ class Runtime:
     def __init__(self):
         self.tables: dict = {}
         self.swaps: dict = {}
+        self.materialized: set[str] = set()
         self._graph_cache: dict[int, Graph] = {}
 
     def register(self, name, entry):
         self.tables[name] = entry
+        self.materialized.discard(name)
 
     def _clear_caches(self):
         for entry in self.tables.values():
@@ -136,6 +153,7 @@ class Runtime:
     def clear(self):
         self._graph_cache.clear()
         self.swaps.clear()
+        self.materialized.clear()
         self._clear_caches()
 
     def resolve(self, name):
@@ -152,14 +170,15 @@ class Runtime:
     def statements(self, spec: TableSpec) -> list[str]:
         return self.graph(spec).statements(spec.name)
 
-    def full_sql(self, spec: TableSpec) -> str:
-        return ";\n\n".join(self.statements(spec)) + ";"
+    def get_full_sql(self, spec: TableSpec, ignore_cached: bool = False) -> str:
+        return ";\n\n".join(self.graph(spec).statements(spec.name, ignore_cached=ignore_cached)) + ";"
 
     def swap(self, mapping):
         from .table import Table
 
         self._graph_cache.clear()
         self.swaps.clear()
+        self.materialized.clear()
         for target, replacement in mapping.items():
             name = target.name if hasattr(target, 'name') else str(target)
             if isinstance(replacement, Table):
