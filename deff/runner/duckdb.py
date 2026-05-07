@@ -24,6 +24,8 @@ class DuckDBResult(Result):
 
     def df(self):
         import pandas as pd
+        if self._relation is None:
+            return pd.DataFrame()
         rel = duckdb.sql(self._query)
         if rel is None:
             return pd.DataFrame()
@@ -36,6 +38,8 @@ class DuckDBResult(Result):
 
     def fetchmany(self, n: int, fresh: bool = False) -> list[tuple]:
         if fresh:
+            if self._relation is None:
+                return []
             rel = duckdb.sql(self._query)
             if rel is None:
                 return []
