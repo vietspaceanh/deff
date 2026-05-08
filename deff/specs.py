@@ -53,6 +53,14 @@ class Query:
         return result
 
     @property
+    def table_aliases(self) -> set[str]:
+        aliases = set()
+        for table in self.parsed.find_all(sqlglot.exp.Table):
+            if table.alias:
+                aliases.add(table.alias)
+        return aliases
+
+    @property
     def table_references(self) -> set[str]:
         """All table-like identifiers: FROM/JOIN table names and column qualifiers.
         Qualified names (e.g. favorita.stores) include the catalog/db prefix."""

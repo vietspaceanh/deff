@@ -154,8 +154,7 @@ class Table:
 def validate_bare_refs(query: Query) -> None:
     refs_in_sql = query.table_references
     registered_bare = {k.split("__", 1)[-1] for k in runtime.tables}
-    qualified_aliases = {r.rsplit(".", 1)[-1] for r in refs_in_sql if "." in r}
-    invalid = [n for n in refs_in_sql if n in registered_bare and n not in qualified_aliases]
+    invalid = [n for n in refs_in_sql if n in registered_bare and n not in query.table_aliases]
     if invalid:
         msg = (
             f"Table(s) {invalid} "
