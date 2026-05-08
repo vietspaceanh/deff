@@ -92,6 +92,7 @@ class TableFunction:
             deps=[d.spec for d in local_deps if not d.is_cte],
             ctes=[d.spec for d in local_deps if d.is_cte],
             is_cte=self.is_local,
+            inline=self.args is None,
         )
 
         table = Table(spec)

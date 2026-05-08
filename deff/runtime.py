@@ -77,28 +77,43 @@ class Graph:
         visit(target)
         return order
 
-    def statements(self, target: str, ignore_cached: bool = False) -> list[str]:
+    def _inline_sql(self, name: str) -> str:
+        spec = self.nodes[name]
+        sql = _inject_ctes(spec, flatten_ctes(spec.ctes), self._dialect)
+        parsed = sqlglot.parse_one(sql, dialect=self._dialect)
+        changed = False
+        for table in list(parsed.find_all(sqlglot.exp.Table)):
+            dep = table.name
+            if dep == name or dep not in self.nodes:
+                continue
+            if dep in self._runtime.materialized or not self.nodes[dep].inline:
+                continue
+            dep_sql = self._inline_sql(dep)
+            table.replace(sqlglot.exp.Subquery(
+                this=sqlglot.parse_one(dep_sql, dialect=self._dialect),
+                alias=sqlglot.exp.TableAlias(this=sqlglot.exp.to_identifier(dep)),
+            ))
+            changed = True
+        return parsed.sql(dialect=self._dialect) if changed else sql
+
+    def _make_ddl_str(self, name: str, sql: str) -> str:
         ddl = "TEMP TABLE" if self._dialect == "duckdb" else "TEMPORARY VIEW"
-        if not ignore_cached:
-            return [
-                f"CREATE OR REPLACE {ddl} {n} AS (\n"
-                f"{_inject_ctes(self.nodes[n], flatten_ctes(self.nodes[n].ctes), self._dialect)}\n"
-                f")"
-                for n in self.topological_order(target)
-            ]
+        return f"CREATE OR REPLACE {ddl} {name} AS (\n{sql}\n)"
+
+    def statements(self, target: str, ignore_cached: bool = False) -> list[str]:
+        order = self.topological_order(target)
+        mat = self._runtime.materialized
         result = []
-        stale = False
-        for n in self.topological_order(target):
-            if n not in self._runtime.materialized:
-                stale = True
-            if stale or n == target:
-                result.append(
-                    f"CREATE OR REPLACE {ddl} {n} AS (\n"
-                    f"{_inject_ctes(self.nodes[n], flatten_ctes(self.nodes[n].ctes), self._dialect)}\n"
-                    f")"
-                )
-                if n != target:
-                    self._runtime.materialized.add(n)
+
+        for n in order:
+            if n != target and self.nodes[n].inline:
+                continue
+            if ignore_cached and n in mat:
+                continue
+            if ignore_cached and n != target:
+                mat.add(n)
+            result.append(self._make_ddl_str(n, self._inline_sql(n)))
+
         return result
 
     def sql(self, target: str) -> str:

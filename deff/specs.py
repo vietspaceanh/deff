@@ -19,6 +19,7 @@ class TableSpec:
     ctes: list[TableSpec] = field(default_factory=list)
     is_cte: bool = False
     is_adhoc: bool = False
+    inline: bool = False
 
     @property
     def sql(self) -> str:
