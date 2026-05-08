@@ -10,12 +10,9 @@ class Runner:
 
     def sql(self, query: str) -> Result:
         if self.dialect == "duckdb":
-            import duckdb
-            from .duckdb import DuckDBResult
+            from .duckdb import DuckDBResult, set_config
 
-            if global_config.memory_limit:
-                duckdb.sql(f"SET memory_limit = '{global_config.memory_limit}'")
-
+            set_config()
             return DuckDBResult(query)
 
         if self.dialect == "spark":

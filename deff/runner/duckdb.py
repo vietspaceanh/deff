@@ -3,6 +3,7 @@ from __future__ import annotations
 import duckdb
 
 from .base import Result
+from .. import config
 
 
 class DuckDBResult(Result):
@@ -66,3 +67,12 @@ class DuckDBResult(Result):
         if self._relation is None:
             return 0
         return self._relation.shape[0]
+
+
+def set_config():
+    all_configs = ["SET progress_bar_time=200"]
+
+    if config.memory_limit:
+        all_configs.append(f"SET memory_limit = '{config.memory_limit}'")
+
+    duckdb.sql(';'.join(all_configs))
