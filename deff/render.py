@@ -147,6 +147,10 @@ def _escape_html(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def _escape_attr(s: str) -> str:
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
 def _node_label(spec: TableSpec) -> str:
     if spec.is_cte:
         display = spec.func_name.split("__", 1)[-1]
@@ -169,7 +173,10 @@ def _node_label(spec: TableSpec) -> str:
             val = v.name
         else:
             val = str(v).replace("'", "")
-        named.append(f"<b>{k}</b>: {val}")
+        display_val = (val[:40] + '...') if len(val) > 40 else val
+        if len(val) > 40:
+            display_val = f'<span title="{_escape_attr(val)}">{display_val}</span>'
+        named.append(f"<b>{k}</b>: {display_val}")
     arg_block = "\n".join(named)
     formatted_args = f"<div style='text-align:left'><small><pre>{arg_block}</pre></small></div>"
     return f"`**{display}**\n{formatted_args}`"
