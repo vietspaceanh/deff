@@ -1,17 +1,19 @@
 from deff import tbl
 from ..common import get_aggs
 
+_ALIAS_BASE = "base"
+_ALIAS_LOOKUP = "lookup"
+
 
 @tbl
 def lookup_aggregate(
-    snapshots,
-    transactions,
-    partition_by: list[str],
-    order_by: str,
+    base,
+    lookup,
+    partition_by: list[str] | None = None,
+    order_by: str | None = None,
+    *,
     stats: list[tuple[str, str]],
-    window_ranges: list[tuple[str, str]],
-    snapshot_alias="snapshots",
-    transactions_alias="transactions"
+    window_ranges: list[tuple[str, str]] | None = None,
 ):
     if order_by is None:
         snap_ob = tx_ob = None
@@ -21,57 +23,89 @@ def lookup_aggregate(
         snap_ob, tx_ob = order_by
 
     if order_by and window_ranges:
-        aggs = get_aggs(stats, window_ranges)
-        select, where = aggs.as_lateral(partition_by, order_by, snapshot_alias, transactions_alias)
-        inner_select = "\n".join(f"{line}" for line in select.split("\n"))
-
-        partition_cols = ", ".join(partition_by)
-        partition_col_parts = ", ".join(
-            f"{snapshot_alias}.{col}" for col in partition_by
+        return lateral_join_lookup(
+            base, lookup,
+            partition_by, snap_ob, tx_ob,
+            stats, window_ranges,
         )
 
-        distinct_cols = ", ".join([snap_ob] + partition_by)
+    if not partition_by:
+        raise ValueError("partition_by is required when no window_ranges are specified")
+    return groupby_lookup(
+        base, lookup,
+        partition_by, stats,
+    )
 
-        return f"""--sql
-        WITH _src AS (
-            SELECT * FROM {transactions}
-            ORDER BY {partition_cols}, {tx_ob}
-        )
+
+def lateral_join_lookup(
+    base,
+    lookup,
+    partition_by,
+    snap_ob,
+    tx_ob,
+    stats,
+    window_ranges,
+):
+    aggs = get_aggs(stats, window_ranges)
+    select, where = aggs.as_lateral(partition_by, snap_ob, _ALIAS_BASE, _ALIAS_LOOKUP)
+    inner_select = "\n".join(f"{line}" for line in select.split("\n"))
+
+    partition_cols = ", ".join(partition_by) if partition_by else None
+    partition_col_parts = ", ".join(
+        f"{_ALIAS_BASE}.{col}" for col in partition_by or []
+    )
+
+    distinct_cols = ", ".join([snap_ob] + (partition_by or []))
+
+    order_clause = f"{partition_cols}, {tx_ob}" if partition_cols else tx_ob
+    select_cols = (
+        f"{_ALIAS_BASE}.{snap_ob},\n{partition_col_parts},"
+        if partition_col_parts
+        else f"{_ALIAS_BASE}.{snap_ob},"
+    )
+
+    return f"""--sql
+    WITH _src AS (
+        SELECT * FROM {lookup}
+        ORDER BY {order_clause}
+    )
+    SELECT
+        {select_cols}
+        w.*
+    FROM (SELECT DISTINCT {distinct_cols} FROM {base}) {_ALIAS_BASE}
+    LEFT JOIN LATERAL (
         SELECT
-            {snapshot_alias}.{snap_ob},
-            {partition_col_parts},
-            w.*
-        FROM (SELECT DISTINCT {distinct_cols} FROM {snapshots}) {snapshot_alias}
-        LEFT JOIN LATERAL (
-            SELECT
-            {inner_select}
-            FROM _src {transactions_alias}
-            {where}
-        ) w ON true
-        """
-    else:
-        select_parts = []
-        group_parts = []
-        if order_by:
-            select_parts.append(f"{snapshot_alias}.{snap_ob}")
-            group_parts.append(f"{snapshot_alias}.{snap_ob}")
-        for col in partition_by:
-            select_parts.append(f"{snapshot_alias}.{col}")
-            group_parts.append(f"{snapshot_alias}.{col}")
-        for formula, alias in stats:
-            if alias:
-                select_parts.append(f'{formula} AS "{alias}"')
-            else:
-                select_parts.append(f"{formula}")
+        {inner_select}
+        FROM _src {_ALIAS_LOOKUP}
+        {where}
+    ) w ON true
+    """
 
-        on_conds = [f"{transactions_alias}.{col} = {snapshot_alias}.{col}" for col in partition_by]
-        on_clause = " AND ".join(on_conds) if on_conds else "true"
 
-        return f"""--sql
-        SELECT
-            {',\n'.join(select_parts)}
-        FROM {snapshots} {snapshot_alias}
-            LEFT JOIN {transactions} {transactions_alias}
-            ON {on_clause}
-        GROUP BY {', '.join(group_parts)}
-        """
+def groupby_lookup(
+    base,
+    lookup,
+    partition_by,
+    stats,
+):
+    select_parts = []
+    group_parts = []
+    for col in partition_by:
+        select_parts.append(f"{_ALIAS_BASE}.{col}")
+        group_parts.append(f"{_ALIAS_BASE}.{col}")
+    for formula, alias in stats:
+        if alias:
+            select_parts.append(f'{formula} AS "{alias}"')
+        else:
+            select_parts.append(f"{formula}")
+
+    on_conds = [f"{_ALIAS_LOOKUP}.{col} = {_ALIAS_BASE}.{col}" for col in partition_by]
+
+    return f"""--sql
+    SELECT
+        {',\n'.join(select_parts)}
+    FROM {base} {_ALIAS_BASE}
+        LEFT JOIN {lookup} {_ALIAS_LOOKUP}
+        ON {' AND '.join(on_conds)}
+    GROUP BY {', '.join(group_parts)}
+    """
