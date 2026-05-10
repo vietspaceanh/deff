@@ -58,6 +58,9 @@ class Query:
         for table in self.parsed.find_all(sqlglot.exp.Table):
             if table.alias:
                 aliases.add(table.alias)
+        for subquery in self.parsed.find_all(sqlglot.exp.Subquery):
+            if subquery.alias:
+                aliases.add(subquery.alias)
         return aliases
 
     @property

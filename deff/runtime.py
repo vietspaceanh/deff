@@ -89,10 +89,19 @@ class Graph:
             if dep in self._runtime.materialized or not self.nodes[dep].inline:
                 continue
             dep_sql = self._inline_sql(dep)
-            table.replace(sqlglot.exp.Subquery(
+            subquery = sqlglot.exp.Subquery(
                 this=sqlglot.parse_one(dep_sql, dialect=self._dialect),
                 alias=sqlglot.exp.TableAlias(this=sqlglot.exp.to_identifier(dep)),
-            ))
+            )
+            joins = table.args.pop("joins", None) or []
+            table.replace(subquery)
+            if joins:
+                parent = subquery.parent
+                while parent is not None and not isinstance(parent, sqlglot.exp.Select):
+                    parent = parent.parent
+                if parent is not None:
+                    existing = parent.args.get("joins") or []
+                    parent.set("joins", existing + list(joins))
             changed = True
         return parsed.sql(dialect=self._dialect) if changed else sql
 
