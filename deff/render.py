@@ -172,7 +172,7 @@ def _node_label(spec: TableSpec) -> str:
         elif hasattr(v, "name"):
             val = v.name
         else:
-            val = str(v).replace("'", "")
+            val = str(v).replace("'", "").replace('"', "")
         display_val = (val[:40] + '...') if len(val) > 40 else val
         if len(val) > 40:
             display_val = f'<span title="{_escape_attr(val)}">{display_val}</span>'

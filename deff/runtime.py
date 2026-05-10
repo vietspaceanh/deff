@@ -94,14 +94,14 @@ class Graph:
                 alias=sqlglot.exp.TableAlias(this=sqlglot.exp.to_identifier(dep)),
             )
             joins = table.args.pop("joins", None) or []
+            parent = table.parent
             table.replace(subquery)
             if joins:
-                parent = subquery.parent
+                # Re-attach the table's joins to the nearest enclosing Select
                 while parent is not None and not isinstance(parent, sqlglot.exp.Select):
                     parent = parent.parent
                 if parent is not None:
-                    existing = parent.args.get("joins") or []
-                    parent.set("joins", existing + list(joins))
+                    parent.set("joins", (parent.args.get("joins") or []) + joins)
             changed = True
         return parsed.sql(dialect=self._dialect) if changed else sql
 
