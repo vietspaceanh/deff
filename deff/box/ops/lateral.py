@@ -30,6 +30,8 @@ def lookup_aggregate(
             f"{snapshot_alias}.{col}" for col in partition_by
         )
 
+        distinct_cols = ", ".join([snap_ob] + partition_by)
+
         return f"""--sql
         WITH _src AS (
             SELECT * FROM {transactions}
@@ -39,7 +41,7 @@ def lookup_aggregate(
             {snapshot_alias}.{snap_ob},
             {partition_col_parts},
             w.*
-        FROM {snapshots} {snapshot_alias}
+        FROM (SELECT DISTINCT {distinct_cols} FROM {snapshots}) {snapshot_alias}
         LEFT JOIN LATERAL (
             SELECT
             {inner_select}
