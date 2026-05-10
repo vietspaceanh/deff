@@ -179,7 +179,7 @@ def _node_label(spec: TableSpec) -> str:
         named.append(f"<b>{k}</b>: {display_val}")
     arg_block = "\n".join(named)
     formatted_args = f"<div style='text-align:left'><small><pre>{arg_block}</pre></small></div>"
-    return f"`**{display}**\n{formatted_args}`"
+    return f"`<b>{display}</b>\n{formatted_args}`"
 
 
 def _register_subgraph(

@@ -95,7 +95,7 @@ def window_suffix(spec):
     if start and not end:
         return f"last_{_abbr(start.removeprefix('last '))}"
     if not start and end:
-        return f"forward_{_abbr(end.removeprefix('next '))}"
+        return f"next_{_abbr(end.removeprefix('next '))}"
     if start and end:
         st = start.removeprefix('last ').removeprefix('next ')
         en = end.removeprefix('last ').removeprefix('next ')
