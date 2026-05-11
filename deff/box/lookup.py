@@ -1,5 +1,5 @@
 from deff import tbl
-from ..common import get_aggs
+from .common import get_aggs
 
 _ALIAS_BASE = "base"
 _ALIAS_LOOKUP = "lookup"
