@@ -93,7 +93,7 @@ class AggregationSpecs:
         return ",\n".join(parts)
 
     def _build_widest_conds(self, left_col, right_col):
-        lower_str, upper_str, has_backward = widest_bounds(self.window_ranges)
+        lower_str, upper_str, has_backward, upper_past_str = widest_bounds(self.window_ranges)
         conds = []
         if lower_str:
             conds.append(f"{right_col} >= {left_col} - INTERVAL '{lower_str}'")
@@ -101,6 +101,8 @@ class AggregationSpecs:
             conds.append(f"{right_col} <= {left_col} + INTERVAL '{upper_str}'")
         elif has_backward:
             conds.append(f"{right_col} <= {left_col}")
+        elif upper_past_str:
+            conds.append(f"{right_col} <= {left_col} - INTERVAL '{upper_past_str}'")
         return conds
 
 

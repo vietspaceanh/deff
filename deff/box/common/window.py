@@ -21,6 +21,8 @@ def widest_bounds(window_ranges):
     lower_str = None
     upper_str = None
     has_backward_to_current = False
+    min_upper_past_days = float('inf')
+    upper_past_str = None
 
     for start, end in window_ranges:
         if start:
@@ -31,14 +33,20 @@ def widest_bounds(window_ranges):
                 lower_str = dur
         if not end:
             has_backward_to_current = True
-        if end and end.startswith("next "):
+        elif end.startswith("next "):
             dur = end.removeprefix("next ")
             days = _interval_days(dur)
             if days > max_upper_days:
                 max_upper_days = days
                 upper_str = dur
+        elif end.startswith("last "):
+            dur = end.removeprefix("last ")
+            days = _interval_days(dur)
+            if days < min_upper_past_days:
+                min_upper_past_days = days
+                upper_past_str = dur
 
-    return lower_str, upper_str, has_backward_to_current
+    return lower_str, upper_str, has_backward_to_current, upper_past_str
 
 
 def build_window_condition(window_range, date_ref, order_by_col):
