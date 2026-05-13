@@ -1,3 +1,21 @@
+UNIT_ABBR = {'week': 'w', 'weeks': 'w', 'month': 'mo', 'months': 'mo',
+             'day': 'd', 'days': 'd', 'hour': 'h', 'hours': 'h',
+             'year': 'y', 'years': 'y'}
+
+
+def parse_duration(duration: str) -> tuple[int, str]:
+    """'last 7 days' → (7, 'day')   'next 30 days' → (30, 'day')   '7 days' → (7, 'day')"""
+    s = duration.strip().removeprefix("last ").removeprefix("next ")
+    parts = s.split()
+    return int(parts[0]), parts[1].rstrip("s")
+
+
+def abbr_duration(duration: str) -> str:
+    """'last 7 days' → '7d'   'next 30 days' → '30d'"""
+    num, unit = parse_duration(duration)
+    return f"{num}{UNIT_ABBR.get(unit + 's', unit[0])}"
+
+
 def _interval_days(s):
     tokens = s.split()
     total = 0
@@ -84,31 +102,29 @@ def parse_window_range(spec):
     return f"range between {_bound(start)} and {_bound(end)}"
 
 
+def build_window(order_by, partition_by=None, frame=None):
+    parts = []
+    if partition_by:
+        cols = ", ".join(partition_by) if isinstance(partition_by, (list, tuple)) else partition_by
+        parts.append(f"PARTITION BY {cols}")
+    if order_by:
+        parts.append(f"ORDER BY {order_by}")
+    if frame:
+        parts.append(frame)
+    return " ".join(parts)
+
+
 def window_suffix(spec):
-    UNIT_ABBR = {'week': 'w', 'weeks': 'w', 'month': 'mo', 'months': 'mo',
-                 'day': 'd', 'days': 'd', 'hour': 'h', 'hours': 'h',
-                 'year': 'y', 'years': 'y'}
-
-    def _abbr(s):
-        tokens = s.strip().split()
-        parts = []
-        for i in range(0, len(tokens), 2):
-            num = tokens[i]
-            unit = tokens[i + 1]
-            if num != "0":
-                parts.append(f"{num}{UNIT_ABBR.get(unit, unit[0])}")
-        return "_".join(parts)
-
     start, end = spec
     if start and not end:
-        return f"last_{_abbr(start.removeprefix('last '))}"
+        return f"last_{abbr_duration(start)}"
     if not start and end:
-        return f"next_{_abbr(end.removeprefix('next '))}"
+        return f"next_{abbr_duration(end)}"
     if start and end:
         st = start.removeprefix('last ').removeprefix('next ')
         en = end.removeprefix('last ').removeprefix('next ')
         if start.startswith('last ') and end.startswith('last '):
-            return f"{_abbr(st)}_ago_to_{_abbr(en)}_ago"
+            return f"{abbr_duration(st)}_ago_to_{abbr_duration(en)}_ago"
         if start.startswith('last ') and end.startswith('next '):
-            return f"{_abbr(st)}_before_after"
+            return f"{abbr_duration(st)}_before_after"
     return ''
