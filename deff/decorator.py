@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextvars
 import functools
 import inspect
+import sys
 import types
 import typing
 
@@ -34,6 +35,7 @@ class TableFunction:
         self._cached_table: Table | None = None
         self._cached_fingerprint: int | None = None
         self._global_deps = _global_deps(func)
+        self._error: Exception | None = None  # cached from _repr_html_, re-raised by __repr__
 
         stack = composition_deps.get()
         self.is_local = bool(stack)
@@ -64,10 +66,8 @@ class TableFunction:
         # Run function (captures local dep tables)
         local_deps: list[Table] = []
         token = composition_deps.set(composition_deps.get() + (local_deps,))
-        try:
-            result = self.func(*args, **kwargs)
-        finally:
-            composition_deps.reset(token)
+        result = self.func(*args, **kwargs)
+        composition_deps.reset(token)
 
         # Resolve references among deps
         raw_sql = f"SELECT * FROM {result}" if isinstance(result, Table) else result
@@ -123,7 +123,7 @@ class TableFunction:
         except TypeError:
             return None
 
-    def __format__(self, format_spec):
+    def __format__(self, _):
         if self.args is None:
             raise ValueError(
                 f"Table '{self.name}' requires explicit arguments "
@@ -175,16 +175,30 @@ class TableFunction:
         return getattr(self(), name)
 
     def __repr__(self):
+        if self._error is not None:
+            raise self._error  # re-raise from _repr_html_ path
+
+        if self.args is None:
+            return f"<{self.name}: requires arguments>"
+
         table = self()
+        if not table.result:
+            table.get()  # trigger execution so runtime errors surface in terminal
         if table.result:
             return f"Table({self.name}({self.args}))"
         return ''
 
     def _repr_html_(self):
-        return self.__getattr__('_repr_html_')()
+        try:
+            result = self.__getattr__('_repr_html_')()
+            self._error = None  # clear cached error on success
+            return result
+        except Exception:
+            self._error = sys.exc_info()[1]  # cache for __repr__ to re-raise
+            return
 
     def __rich_console__(self, console, options):
-        return self().__rich_console__(console, options)
+        yield from self().__rich_console__(console, options)
 
     def __getitem__(self, cols: str):
         return self.__getattr__('__getitem__')(cols)
