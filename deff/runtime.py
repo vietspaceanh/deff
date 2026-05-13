@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from pprint import pformat
 import sqlglot
 
 from . import config
@@ -129,34 +128,6 @@ class Graph:
         return ";".join(self.statements(target)) + ";"
 
 
-def _inject_ctes(spec: TableSpec, ctes: list[TableSpec], dialect: str) -> str:
-    if not ctes:
-        return spec.sql
-    parsed = spec.parsed.copy()
-    new_ctes = _build_cte_exprs(ctes)
-    existing_with = parsed.args.get("with_")
-    if existing_with:
-        existing_with.set("expressions", new_ctes + list(existing_with.expressions))
-    else:
-        parsed.set("with_", sqlglot.exp.With(expressions=new_ctes))
-    return parsed.sql(dialect=dialect)
-
-
-def _build_cte_exprs(ctes: list[TableSpec]) -> list:
-    exprs = []
-    for cte in ctes:
-        cte_query = cte.parsed.copy()
-        exprs.append(
-            sqlglot.exp.CTE(
-                this=cte_query,
-                alias=sqlglot.exp.TableAlias(
-                    this=sqlglot.exp.to_identifier(cte.name),
-                ),
-            )
-        )
-    return exprs
-
-
 class Runtime:
     def __init__(self):
         self.tables: dict = {}
@@ -215,9 +186,80 @@ class Runtime:
         self._clear_caches()
         
     def __repr__(self):
-        swaps_str = pformat(dict(self.swaps), indent=2)
-        tables_str = pformat(dict(self.tables), indent=2)
-        return f"Runtime(\n  swap={swaps_str},\n  tables={tables_str},\n)"
+        tree = _table_tree(self.tables)
+        swaps = f"  swaps: {len(self.swaps)} entries" if self.swaps else "  swaps: ()"
+        return f"Runtime(\n  tables:\n{tree}\n{swaps}\n)"
 
 
 runtime = Runtime()
+
+
+# ─────────────────────────────────── Utils ────────────────────────────────── #
+
+def _inject_ctes(spec: TableSpec, ctes: list[TableSpec], dialect: str) -> str:
+    if not ctes:
+        return spec.sql
+    parsed = spec.parsed.copy()
+    new_ctes = _build_cte_exprs(ctes)
+    existing_with = parsed.args.get("with_")
+    if existing_with:
+        existing_with.set("expressions", new_ctes + list(existing_with.expressions))
+    else:
+        parsed.set("with_", sqlglot.exp.With(expressions=new_ctes))
+    return parsed.sql(dialect=dialect)
+
+
+def _build_cte_exprs(ctes: list[TableSpec]) -> list:
+    exprs = []
+    for cte in ctes:
+        cte_query = cte.parsed.copy()
+        exprs.append(
+            sqlglot.exp.CTE(
+                this=cte_query,
+                alias=sqlglot.exp.TableAlias(
+                    this=sqlglot.exp.to_identifier(cte.name),
+                ),
+            )
+        )
+    return exprs
+
+
+def _table_tree(tables: dict) -> str:
+
+    def _static_edges(tfs: dict) -> dict[str, set[str]]:
+        short_to_qnames: dict[str, list[str]] = {}
+        for q in tfs:
+            short_to_qnames.setdefault(q.split("__", 1)[-1], []).append(q)
+        return {
+            q: {o for name in tf.func.__code__.co_names
+                if name in short_to_qnames
+                for o in short_to_qnames[name] if o != q}
+            for q, tf in tfs.items()
+        }
+
+    def add(q, p, last, first):
+        e = tfs[q]
+        s = " ✗" if e._error else (" ⚡ requires arguments" if e.args is None else " ✓")
+        lines.append(f"{p}{'└── ' if last else '├── '}{q}{s}")
+        if not first:
+            return
+        expanded.add(q)
+        deps = sorted(edges.get(q, ()))
+        for i, d in enumerate(deps):
+            add(d, p + ("    " if last else "│   "), i == len(deps) - 1, d not in expanded)
+
+    tfs = {n: e for n, e in tables.items() if hasattr(e, '_global_deps')}
+    if not tfs:
+        return "  (no tables registered)"
+
+    edges = _static_edges(tfs)
+    roots = sorted(set(tfs) - {d for deps in edges.values() for d in deps}) or sorted(tfs)
+    expanded: set[str] = set()
+    lines: list[str] = []
+
+    for i, r in enumerate(roots):
+        add(r, "  ", i == len(roots) - 1, True)
+    for n in sorted(tfs):
+        if n not in expanded:
+            add(n, "  ", True, True)
+    return "\n".join(lines)
