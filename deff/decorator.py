@@ -17,6 +17,12 @@ composition_deps: contextvars.ContextVar[tuple[list, ...]] = contextvars.Context
 P = typing.ParamSpec("P")
 
 
+@typing.overload
+def tbl(func: typing.Callable[[], str | Table]) -> Table: ...
+
+@typing.overload
+def tbl(func: typing.Callable[P, str | Table]) -> typing.Callable[P, Table]: ...
+
 def tbl(func: typing.Callable[P, str | Table]) -> typing.Callable[P, Table] | Table:
     tf = TableFunction(func)
     functools.update_wrapper(tf, func)

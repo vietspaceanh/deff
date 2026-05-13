@@ -1,4 +1,4 @@
-from deff import tbl
+from deff import tbl, Table
 from .common import get_aggs
 
 _ALIAS_BASE = "base"
@@ -7,8 +7,8 @@ _ALIAS_LOOKUP = "lookup"
 
 @tbl
 def lookup_aggregate(
-    base,
-    lookup,
+    base: Table,
+    lookup: Table,
     partition_by: list[str] | None = None,
     order_by: str | None = None,
     *,

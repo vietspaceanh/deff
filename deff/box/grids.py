@@ -1,12 +1,12 @@
-from deff import tbl
+from deff import tbl, Table
 
 
 @tbl
 def generate_snapshot_grids(
-    table,
+    table: Table,
     timestamp_col: str,
-    partition_by_cols: list[str],
     freq: str,
+    partition_by_cols: list[str] | None = None,
     max_inactive=None,
     alignment_date="1970-01-01 00:00:00",
 ):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import typing
+
 from . import config
 from .specs import TableSpec, Query
 from .runtime import runtime
@@ -13,6 +15,11 @@ class Table:
     def __init__(self, spec: TableSpec, result=None):
         self.spec = spec
         self.result = result
+
+    def __call__(self, *args: typing.Any, **kwargs: typing.Any) -> Table:
+        raise NotImplementedError(
+            "Call the decorated function directly, not the Table instance."
+        )
 
     @property
     def raw_sql(self) -> str:
