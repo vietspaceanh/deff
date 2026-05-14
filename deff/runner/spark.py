@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from pyspark.sql import SparkSession
 from .base import Result
 
 
 class SparkResult(Result):
     def __init__(self, query):
+        from pyspark.sql import SparkSession
         self._df = SparkSession.builder.getOrCreate().sql(query)
 
     def df(self):
