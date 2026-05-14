@@ -1,10 +1,10 @@
 [project]
 name = "deff"
-version = "0.5.4"
+version = "0.5.5"
 requires-python = ">=3.13"
 dependencies = [
-    "duckdb>=1.4.3",
-    "sqlglot>=30.7.0",
+    "duckdb>=1.5.0",
+    "sqlglot>=30.8.0",
 ]
 
 [dependency-groups]
