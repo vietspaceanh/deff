@@ -225,6 +225,22 @@ class TableFunction:
     def __or__(self, query: str):
         return self.__getattr__('__or__')(query)
 
+    def refresh(self):
+        self._cached_table = None
+        self._epoch_at_cache = None
+        self._error = None
+
+
+def params(cls):
+    base_setattr = cls.__setattr__ if '__setattr__' in cls.__dict__ else object.__setattr__
+
+    def __setattr__(self, name, value):
+        base_setattr(self, name, value)
+        runtime.bump_epoch()
+
+    cls.__setattr__ = __setattr__
+    return cls
+
 
 def _qualified_name(func) -> str:
     module = func.__module__.rsplit(".", 1)[-1]
