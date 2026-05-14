@@ -172,7 +172,7 @@ class TableFunction:
         try:
             table = self()
         except Exception as err:
-            self._error = err
+            self._error = err  # store so that _repr_html_ won't raise again
             raise
 
         if table and table.result:
@@ -184,17 +184,7 @@ class TableFunction:
             return
         if self._error is not None:
             return
-
-        try:
-            table = self()
-        except Exception as err:
-            self._error = err
-            raise
-
-        result = table._repr_html_()
-        if isinstance(result, Exception):
-            raise result
-        return result
+        return self()._repr_html_()
 
     def __rich_console__(self, console, options):
         if self.args is None:

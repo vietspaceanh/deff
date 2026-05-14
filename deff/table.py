@@ -109,10 +109,7 @@ class Table:
         return self.__or__(f"SELECT {cols}")
 
     def _repr_html_(self) -> str | None:
-        try:
-            self.get()
-        except Exception as err:
-            return err
+        self.get()
         return result_to_html(self.result, config.rows)
 
     def __rich_console__(self, *_):
