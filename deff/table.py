@@ -109,7 +109,10 @@ class Table:
         return self.__or__(f"SELECT {cols}")
 
     def _repr_html_(self) -> str | None:
-        self.get()
+        try:
+            self.get()
+        except Exception as err:
+            return err
         return result_to_html(self.result, config.rows)
 
     def __rich_console__(self, *_):
@@ -122,8 +125,7 @@ class Table:
         return self.name
 
     def __repr__(self) -> str:
-        args_str = ", ".join(f"{k}={v!r}" for k, v in self.args.items())
-        return f"Table({self.func_name}({args_str}))"
+        return f"Table({self.func_name})"
 
     def __getattr__(self, name):
         if self.result is not None:

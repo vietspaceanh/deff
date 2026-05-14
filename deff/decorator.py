@@ -181,30 +181,43 @@ class TableFunction:
         return getattr(self(), name)
 
     def __repr__(self):
-        if self._error is not None:
-            raise self._error  # re-raise from _repr_html_ path
-
         if self.args is None:
             return f"<{self.name}: requires arguments>"
 
-        table = self()
-        if not table.result:
-            table.get()  # trigger execution so runtime errors surface in terminal
-        if table.result:
+        try:
+            table = self()
+        except Exception as err:
+            self._error = err
+            raise
+
+        if table and table.result:
             return f"Table({self.name}({self.args}))"
         return ''
 
     def _repr_html_(self):
-        try:
-            result = self.__getattr__('_repr_html_')()
-            self._error = None  # clear cached error on success
-            return result
-        except Exception:
-            self._error = sys.exc_info()[1]  # cache for __repr__ to re-raise
+        if self.args is None:
+            return
+        if self._error is not None:
             return
 
+        try:
+            table = self()
+        except Exception as err:
+            self._error = err
+            raise
+
+        result = table._repr_html_()
+        if isinstance(result, Exception):
+            raise result
+        return result
+
     def __rich_console__(self, console, options):
-        yield from self().__rich_console__(console, options)
+        if self.args is None:
+            return
+        if self._error is not None:
+            return
+        table = self()
+        yield from table.__rich_console__(console, options)
 
     def __getitem__(self, cols: str):
         return self.__getattr__('__getitem__')(cols)
