@@ -67,8 +67,29 @@ def widest_bounds(window_ranges):
     return lower_str, upper_str, has_backward_to_current, upper_past_str
 
 
-def build_window_condition(window_range, date_ref, order_by_col):
+def normalize_window_range(window_range):
     start, end = window_range
+    if start and not end and not start.startswith(('last ', 'next ')):
+        start = 'last ' + start
+    if end and not start and not end.startswith(('last ', 'next ')):
+        end = 'next ' + end
+    if start and not start.startswith(('last ', 'next ')):
+        raise ValueError(
+            f"Invalid window range spec {window_range!r}:\n"
+            f"start={start!r} should start with 'last' or 'next'. "
+            f"E.g. ('last {start}', ...) or ('next {start}', ...)."
+        )
+    if end and not end.startswith(('last ', 'next ')):
+        raise ValueError(
+            f"Invalid window range spec {window_range!r}:\n"
+            f"end={end!r} should start with 'last' or 'next'. "
+            f"E.g. (..., 'last {end}') or (..., 'next {end}')."
+        )
+    return start, end
+
+
+def build_window_condition(window_range, date_ref, order_by_col):
+    start, end = normalize_window_range(window_range)
     d = order_by_col
     s = date_ref
     if start and not end:
@@ -89,6 +110,7 @@ def build_window_condition(window_range, date_ref, order_by_col):
 
 
 def parse_window_range(spec):
+    start, end = normalize_window_range(spec)
     def _bound(s):
         if not s:
             return 'current row'
@@ -97,8 +119,6 @@ def parse_window_range(spec):
             return f"interval {s.removeprefix('last ')} preceding"
         if s.startswith('next '):
             return f"interval {s.removeprefix('next ')} following"
-        raise ValueError(f"bound must start with 'last ' or 'next ', or be empty: got {s!r}")
-    start, end = spec
     return f"range between {_bound(start)} and {_bound(end)}"
 
 

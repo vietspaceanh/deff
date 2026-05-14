@@ -31,6 +31,7 @@ def lookup_aggregate(
 
     if not partition_by:
         raise ValueError("partition_by is required when no window_ranges are specified")
+
     return groupby_lookup(
         base, lookup,
         partition_by, stats,
