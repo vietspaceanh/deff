@@ -327,7 +327,7 @@ def _build_html_style() -> str:
         f"body.vscode-light .deff-tbl{{{l}}}"
         f"body.vscode-dark .deff-tbl,body.vscode-high-contrast .deff-tbl{{{d}}}"
         ".deff-tbl th{text-align:center;position:sticky;top:0;z-index:1;backdrop-filter:blur(24px);background:rgba(128,128,128,0.04);border-right:1px solid var(--c-border)}"
-        ".deff-tbl td{border-right:1px solid var(--c-border)}"
+        ".deff-tbl td{border-right:1px solid var(--c-border);min-width:10ch}"
         ".deff-tbl td>div{max-height:200px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--c-border) transparent}"
         ".deff-tbl-badge{font-size:0.75em;background:var(--c-badge-bg);padding:1px 5px;border-radius:3px;font-weight:500}"
         "</style>"
