@@ -2,7 +2,7 @@ from deff import tbl, Table
 
 
 @tbl
-def generate_snapshot_grids(
+def generate_snapshots(
     table: Table,
     timestamp_col: str,
     freq: str,
@@ -34,7 +34,7 @@ def generate_snapshot_grids(
     partition_expr = ", ".join(partition_by_cols)
 
     @tbl
-    def binned():
+    def raw_bins():
         delta, raw_diff = _delta_expr(timestamp_col, freq_value, freq_unit, alignment_date, seconds_per)
         return f"""--sql
         WITH bin_prep AS (
@@ -45,26 +45,34 @@ def generate_snapshot_grids(
             '{alignment_date}'::TIMESTAMP + {delta} AS binned_ts
         FROM bin_prep
         """
-
-    return f"""--sql
-    WITH with_next AS (
-        FROM {binned}
+        
+    @tbl
+    def bins():
+        return f"""--sql
+        FROM {raw_bins}
         SELECT *,
-            LEAD(binned_ts) OVER (PARTITION BY {partition_expr} ORDER BY binned_ts) AS next_bin,
             LEAST(
                 LEAD(binned_ts) OVER (PARTITION BY {partition_expr} ORDER BY binned_ts),
                 binned_ts + INTERVAL '{inactive_str}'
             ) AS upper_bound
-    )
-    FROM with_next
-    SELECT
-        unnest(generate_series(
-            binned_ts,
-            GREATEST(upper_bound - INTERVAL '{freq}', binned_ts),
-            INTERVAL '{freq}'
-        )) AS {timestamp_col},
-        {partition_expr},
-    WHERE next_bin IS NOT NULL
+        """
+        
+    @tbl
+    def grid():
+        return f"""--sql
+        FROM {bins}
+        SELECT
+            unnest(generate_series(
+                binned_ts,
+                GREATEST(upper_bound - INTERVAL '{freq}', binned_ts),
+                INTERVAL '{freq}'
+            )) AS {timestamp_col},
+            {partition_expr}
+        """
+
+    return f"""--sql
+    FROM {grid}
+    WHERE {timestamp_col} <= (SELECT MAX({timestamp_col}::TIMESTAMP) FROM {table})
     ORDER BY {partition_expr}, {timestamp_col}
     """
 
@@ -73,6 +81,6 @@ def _delta_expr(ts_expr, freq_value, freq_unit, alignment_date, seconds_per):
     if freq_unit in seconds_per:
         scale = seconds_per[freq_unit] * freq_value
         raw = f"EXTRACT(epoch FROM {ts_expr}::TIMESTAMP - '{alignment_date}'::TIMESTAMP)"
-        return f"((FLOOR({raw} / {scale}) * {freq_value})::VARCHAR || ' {freq_unit}')::INTERVAL", raw
+        return f"((CEIL({raw} / {scale}) * {freq_value})::VARCHAR || ' {freq_unit}')::INTERVAL", raw
     raw = f"DATEDIFF('month', '{alignment_date}'::TIMESTAMP, {ts_expr}::TIMESTAMP)::DOUBLE"
-    return f"((FLOOR({raw} / {freq_value}) * {freq_value})::VARCHAR || ' months')::INTERVAL", raw
+    return f"((CEIL({raw} / {freq_value}) * {freq_value})::VARCHAR || ' months')::INTERVAL", raw
