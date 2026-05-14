@@ -34,7 +34,7 @@ def generate_snapshots(
     partition_expr = ", ".join(partition_by_cols)
 
     @tbl
-    def raw_bins():
+    def ceil_transactions_to_nearest_snapshots():
         delta, raw_diff = _delta_expr(timestamp_col, freq_value, freq_unit, alignment_date, seconds_per)
         return f"""--sql
         WITH bin_prep AS (
@@ -47,9 +47,9 @@ def generate_snapshots(
         """
         
     @tbl
-    def bins():
+    def add_max_inactive_bound_per_snapshot():
         return f"""--sql
-        FROM {raw_bins}
+        FROM {ceil_transactions_to_nearest_snapshots}
         SELECT *,
             LEAST(
                 LEAD(binned_ts) OVER (PARTITION BY {partition_expr} ORDER BY binned_ts),
@@ -58,9 +58,9 @@ def generate_snapshots(
         """
         
     @tbl
-    def grid():
+    def fill_snapshots():
         return f"""--sql
-        FROM {bins}
+        FROM {add_max_inactive_bound_per_snapshot}
         SELECT
             unnest(generate_series(
                 binned_ts,
@@ -71,7 +71,7 @@ def generate_snapshots(
         """
 
     return f"""--sql
-    FROM {grid}
+    FROM {fill_snapshots}
     WHERE {timestamp_col} <= (SELECT MAX({timestamp_col}::TIMESTAMP) FROM {table})
     ORDER BY {partition_expr}, {timestamp_col}
     """
