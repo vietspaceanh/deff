@@ -8,7 +8,7 @@ from .runtime import runtime
 from .runner import Runner
 from .render import generate_mermaid_code, result_to_html, result_to_rich
 
-TMP_TABLE_NAME = 'current_table'
+TMP_TABLE_NAME = 'unnamed'
 
 
 class Table:
