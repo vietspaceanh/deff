@@ -239,41 +239,49 @@ def _build_cte_exprs(ctes: list[TableSpec]) -> list:
 
 
 def _table_tree(tables: dict) -> str:
+    from .decorator import TableFunction
 
-    def _static_edges(tfs: dict) -> dict[str, set[str]]:
-        short_to_qnames: dict[str, list[str]] = {}
-        for q in tfs:
-            short_to_qnames.setdefault(q.split("__", 1)[-1], []).append(q)
-        return {
-            q: {o for name in tf.func.__code__.co_names
-                if name in short_to_qnames
-                for o in short_to_qnames[name] if o != q}
-            for q, tf in tfs.items()
-        }
-
-    def add(q, p, last, first):
-        e = tfs[q]
-        s = " ✗" if e._error else (" ⚡ requires arguments" if e.args is None else " ✓")
-        lines.append(f"{p}{'└── ' if last else '├── '}{q}{s}")
-        if not first:
-            return
-        expanded.add(q)
-        deps = sorted(edges.get(q, ()))
-        for i, d in enumerate(deps):
-            add(d, p + ("    " if last else "│   "), i == len(deps) - 1, d not in expanded)
-
-    tfs = {n: e for n, e in tables.items() if hasattr(e, '_global_deps')}
-    if not tfs:
+    entries = {
+        name: entry for name, entry in tables.items()
+        if isinstance(entry, (TableFunction, TableSpec))
+    }
+    if not entries:
         return "  (no tables registered)"
 
-    edges = _static_edges(tfs)
-    roots = sorted(set(tfs) - {d for deps in edges.values() for d in deps}) or sorted(tfs)
-    expanded: set[str] = set()
-    lines: list[str] = []
+    entry_names = set(entries)
+    edges = {}
+    for qname, entry in entries.items():
+        if isinstance(entry, TableFunction):
+            cached = getattr(entry, '_cached_table', None)
+            raw = cached.spec.query.table_names if cached else []
+        elif isinstance(entry, TableSpec):
+            raw = [dep.name for dep in entry.deps]
+        else:
+            raw = []
+        deps = {n for n in raw if n in entry_names and n != qname}
+        if deps:
+            edges[qname] = deps
 
-    for i, r in enumerate(roots):
-        add(r, "  ", i == len(roots) - 1, True)
-    for n in sorted(tfs):
-        if n not in expanded:
-            add(n, "  ", True, True)
+    roots = sorted(set(entries) - {dep for deps in edges.values() for dep in deps}) or sorted(entries)
+    expanded, lines = set(), []
+
+    def add(qname, prefix, last, first):
+        entry = entries[qname]
+        status = (
+            " ✗" if getattr(entry, '_error', None)
+            else (" ⚡ requires arguments" if getattr(entry, 'args', None) is None else " ✓")
+        )
+        lines.append(f"{prefix}{'└── ' if last else '├── '}{qname}{status}")
+        if not first:
+            return
+        expanded.add(qname)
+        deps = sorted(edges.get(qname, ()))
+        for idx, dep in enumerate(deps):
+            add(dep, prefix + ("    " if last else "│   "), idx == len(deps) - 1, dep not in expanded)
+
+    for idx, root in enumerate(roots):
+        add(root, "  ", idx == len(roots) - 1, True)
+    for name in sorted(entries):
+        if name not in expanded:
+            add(name, "  ", True, True)
     return "\n".join(lines)
