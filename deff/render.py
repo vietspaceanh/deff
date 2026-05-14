@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import os
+
+from . import config
 from .specs import TableSpec, flatten_ctes
 from .runtime import runtime, Graph
 
-COLORS = {
+DARK_COLORS = {
     "numeric": "#89b4fa",
     "string": "#8ee087",
     "boolean": "#fab387",
@@ -11,9 +14,19 @@ COLORS = {
     "badge_bg": "#313244",
     "border": "#45475a",
     "default": "#555555",
-    "default_bg": "#eeeeee",
     "highlighted_border": "#589bffb8",
 }
+LIGHT_COLORS = {
+    "numeric": "#1e66f5",
+    "string": "#40a02b",
+    "boolean": "#fe640b",
+    "temporal": "#8839ef",
+    "badge_bg": "#e6e9ef",
+    "border": "#ccd0da",
+    "default": "#6c6f85",
+    "highlighted_border": "#1e66f580",
+}
+
 NUMERIC = ("INTEGER", "BIGINT", "HUGEINT", "SMALLINT", "TINYINT", "FLOAT", "DOUBLE", "DECIMAL")
 TEMPORAL = ("DATE", "TIMESTAMP", "TIMESTAMP WITH TIME ZONE", "TIME", "INTERVAL")
 STRING = ("VARCHAR", "CHAR", "TEXT")
@@ -26,23 +39,24 @@ TYPE_ROLES = {
 
 
 def result_to_html(result, max_rows) -> str:
+    def _truncate_cell(v, max_len=2000):
+        if v is None:
+            return "&nbsp;"
+        s = str(v)
+        if len(s) > max_len:
+            s = s[:max_len] + "..."
+        return _escape_html(s)
+
     cols, types, rows, truncated = _extract_preview(result, max_rows)
-    colors = [COLORS[TYPE_ROLES.get(t, "default")] for t in types]
-    border = COLORS["border"]
-    html = f"""<style>
-    .deff-tbl {{ border-collapse:separate }}
-    .deff-tbl th {{ text-align:center;position:sticky;top:0;z-index:1;backdrop-filter:blur(24px);background:rgba(128,128,128,0.04);border-right:1px solid {border} }}
-    .deff-tbl td {{ border-right:1px solid {border} }}
-    .deff-tbl-badge {{ font-size:0.75em;background:{COLORS["badge_bg"]};padding:1px 5px;border-radius:3px;font-weight:500 }}
-    </style>
-    <div style="max-height:400px;overflow-y:auto"><table class="deff-tbl"><thead><tr>
-    """
-    for col, t, c in zip(cols, types, colors):
-        html += f'<th>{col}<br><span class="deff-tbl-badge" style="color:{c}">{t}</span></th>'
+    roles = [TYPE_ROLES.get(t, "default") for t in types]
+    html = _build_html_style()
+    html += '<div style="max-height:400px;overflow-y:auto"><table class="deff-tbl"><thead><tr>'
+    for col, t, r in zip(cols, types, roles):
+        html += f'<th>{col}<br><span class="deff-tbl-badge" style="color:var(--c-{r})">{t}</span></th>'
     html += "</tr></thead><tbody>"
     for row in rows:
         html += "<tr>" + "".join(
-            f'<td style="color:{colors[i]}">{_escape_html(str(v)) if v is not None else "&nbsp;"}</td>'
+            f'<td style="color:var(--c-{roles[i]})"><div>{_truncate_cell(v)}</div></td>'
             for i, v in enumerate(row)
         ) + "</tr>"
     html += "</tbody></table></div>"
@@ -57,11 +71,12 @@ def result_to_rich(result, max_rows):
     import rich.table as rt
     from rich.text import Text
 
+    colors = _resolve_colors()
     cols, types, rows, truncated = _extract_preview(result, max_rows)
 
     table = rt.Table()
     for col, t in zip(cols, types):
-        color = COLORS[TYPE_ROLES.get(t, "default")]
+        color = colors[TYPE_ROLES.get(t, "default")]
         header = Text.assemble(
             (col, "bold"),
             ("\n", ""),
@@ -72,7 +87,7 @@ def result_to_rich(result, max_rows):
     for row in rows:
         styled_row = []
         for i, v in enumerate(row):
-            color = COLORS[TYPE_ROLES.get(types[i], "default")]
+            color = colors[TYPE_ROLES.get(types[i], "default")]
             if v is None:
                 styled_row.append("")
             else:
@@ -86,6 +101,7 @@ def result_to_rich(result, max_rows):
 
 
 def generate_mermaid_code(table_spec: TableSpec) -> str:
+    colors = _resolve_colors()
     ctx = runtime.graph(table_spec)
     target = table_spec.name
     lines = ["graph TD"]
@@ -109,7 +125,7 @@ def generate_mermaid_code(table_spec: TableSpec) -> str:
                 continue
             lines.append(f'    {dep.name}["{_node_label(dep)}"] --> {name}["{label}"]')
 
-    highlighted = COLORS["highlighted_border"]
+    highlighted = colors["highlighted_border"]
     for subgraph_id, all_ctes, sub_label, parent_specs in subgraphs.values():
         _write_subgraph_header(subgraph_id, sub_label, all_ctes, lines)
         _add_cte_internal_edges(subgraph_id, all_ctes, lines)
@@ -274,3 +290,45 @@ def _close_subgraph(
     lines.append(f"    style {subgraph_id} stroke:{highlighted},stroke-width:2px,stroke-dasharray:5 3")
     for cte in all_ctes:
         lines.append(f"    style {subgraph_id}__{cte.name} stroke:{highlighted},stroke-width:2px")
+
+
+# ────────────────────────────────── Theming ───────────────────────────────── #
+
+def _resolve_colors() -> dict[str, str]:
+    theme = config.theme
+    if theme == "dark":
+        return DARK_COLORS
+    if theme == "light":
+        return LIGHT_COLORS
+
+    colorfgbg = os.environ.get("COLORFGBG", "")
+    if colorfgbg.endswith(";0"):
+        return DARK_COLORS
+    if colorfgbg.endswith(";15"):
+        return LIGHT_COLORS
+
+    if os.environ.get("DARK_BACKGROUND") == "1":
+        return DARK_COLORS
+
+    return DARK_COLORS
+
+
+def _build_html_style() -> str:
+    def block(colors):
+        return "".join(f"--c-{k}:{v};" for k, v in colors.items())
+
+    l, d = block(LIGHT_COLORS), block(DARK_COLORS)
+    return (
+        "<style>"
+        f".deff-tbl{{{l}border-collapse:separate}}"
+        f"@media(prefers-color-scheme:dark){{.deff-tbl{{{d}}}}}"
+        f'body[data-jp-theme-light="true"] .deff-tbl{{{l}}}'
+        f'body[data-jp-theme-light="false"] .deff-tbl{{{d}}}'
+        f"body.vscode-light .deff-tbl{{{l}}}"
+        f"body.vscode-dark .deff-tbl,body.vscode-high-contrast .deff-tbl{{{d}}}"
+        ".deff-tbl th{text-align:center;position:sticky;top:0;z-index:1;backdrop-filter:blur(24px);background:rgba(128,128,128,0.04);border-right:1px solid var(--c-border)}"
+        ".deff-tbl td{border-right:1px solid var(--c-border)}"
+        ".deff-tbl td>div{max-height:200px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--c-border) transparent}"
+        ".deff-tbl-badge{font-size:0.75em;background:var(--c-badge-bg);padding:1px 5px;border-radius:3px;font-weight:500}"
+        "</style>"
+    )
