@@ -3,8 +3,6 @@ from __future__ import annotations
 import contextvars
 import functools
 import inspect
-import sys
-import types
 import typing
 
 from .runtime import runtime
@@ -39,9 +37,8 @@ class TableFunction:
         self.func = func
         self.name = _qualified_name(func)
         self._cached_table: Table | None = None
-        self._cached_fingerprint: int | None = None
-        self._global_deps = _global_deps(func)
-        self._error: Exception | None = None  # cached from _repr_html_, re-raised by __repr__
+        self._epoch_at_cache: int | None = None
+        self._error: Exception | None = None
 
         stack = composition_deps.get()
         self.is_local = bool(stack)
@@ -55,25 +52,30 @@ class TableFunction:
             self._init_from_func(args[0])
             return self
 
+        # Return the cached version if possible
+        if (
+            not args
+            and not kwargs
+            and self._cached_table is not None
+            and self._epoch_at_cache == runtime.last_change_ns
+        ):
+            return self._cached_table
+
         sig = inspect.signature(self.func)
         bound = sig.bind(*args, **kwargs)
         bound.apply_defaults()
         all_args = dict(bound.arguments)
 
-        # Cache check (module-level tables only)
-        if not self.is_local:
-            default_kwargs = self.args
-            is_default_call = default_kwargs is not None and not args and all_args == default_kwargs
-            if is_default_call and self._cached_table is not None and self._cached_fingerprint == self._dependency_fingerprint():
-                return self._cached_table
-        else:
-            is_default_call = False
+        default_kwargs = self.args
+        is_default_call = default_kwargs is not None and not args and all_args == default_kwargs
 
         # Run function (captures local dep tables)
         local_deps: list[Table] = []
         token = composition_deps.set(composition_deps.get() + (local_deps,))
-        result = self.func(*args, **kwargs)
-        composition_deps.reset(token)
+        try:
+            result = self.func(*args, **kwargs)
+        finally:
+            composition_deps.reset(token)
 
         # Resolve references among deps
         raw_sql = f"SELECT * FROM {result}" if isinstance(result, Table) else result
@@ -104,13 +106,12 @@ class TableFunction:
         table = Table(spec)
 
         # Register alias and update cache
-        if not self.is_local:
-            self._last_args = all_args
-            if table.name != self.name:
-                runtime.register(table.name, spec)
-            if is_default_call:
-                self._cached_table = table
-                self._cached_fingerprint = self._dependency_fingerprint()
+        self._last_args = all_args
+        if table.name != self.name:
+            runtime.register(table.name, spec)
+        if is_default_call:
+            self._cached_table = table
+            self._epoch_at_cache = runtime.last_change_ns
 
         # Stack to parent's composition deps
         stack = composition_deps.get()
@@ -155,22 +156,6 @@ class TableFunction:
             )
 
         return self().name
-
-    def _dependency_fingerprint(self) -> int:
-        g = self.func.__globals__
-        parts = []
-        for name in self._global_deps:
-            val = g[name]
-            if isinstance(val, TableFunction):
-                t = val() if val.args is not None else None
-                parts.append(f"{name}={t.spec.sql if t else None}")
-            elif isinstance(val, types.ModuleType):
-                parts.append(f"{name}={val.__name__}")
-            elif hasattr(val, '__dict__'):
-                parts.append(f"{name}={sorted(val.__dict__.items())}")
-            else:
-                parts.append(f"{name}={val!r}")
-        return hash("|".join(parts))
 
     def __getattr__(self, name):
         if self.args is None:
@@ -247,15 +232,3 @@ def _qualified_name(func) -> str:
     if module == "__main__" or module == "__mp_main__":
         return f"_main__{func.__name__}"
     return f"{module}__{func.__name__}"
-
-
-def _global_deps(func):
-    names = set()
-    stack = [func.__code__]
-    while stack:
-        c = stack.pop()
-        for x in c.co_consts:
-            if isinstance(x, types.CodeType):
-                stack.append(x)
-        names.update(n for n in c.co_names if n in func.__globals__)
-    return names

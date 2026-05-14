@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import time
 from dataclasses import replace
+
 import sqlglot
 
 from . import config
@@ -24,6 +26,10 @@ class Graph:
             return entry
         if entry.args is None:
             return
+        cached = getattr(entry, '_cached_table', None)
+        epoch = getattr(entry, '_epoch_at_cache', None)
+        if cached is not None and epoch == self._runtime.last_change_ns:
+            return cached.spec
         return entry(**entry.args).spec
 
     def _build_graph(self, spec: TableSpec) -> None:
@@ -133,17 +139,25 @@ class Runtime:
         self.tables: dict = {}
         self.swaps: dict = {}
         self.materialized: set[str] = set()
+        self.last_change_ns: int = 0
         self._graph_cache: dict[int, Graph] = {}
 
+    def bump_epoch(self):
+        self.last_change_ns = max(time.monotonic_ns(), self.last_change_ns + 1)
+
     def register(self, name, entry):
+        was_registered = name in self.tables
         self.tables[name] = entry
         self.materialized.discard(name)
+        if was_registered and not isinstance(entry, TableSpec):
+            self.bump_epoch()
 
     def _clear_caches(self):
         for entry in self.tables.values():
             cached = getattr(entry, '_cached_table', None)
             if cached is not None:
                 cached.result = None
+        self.bump_epoch()
 
     def clear(self):
         self._graph_cache.clear()
@@ -184,7 +198,7 @@ class Runtime:
                 spec = replacement().spec
             self.swaps[name] = replace(spec, name=name, deps=list(spec.deps))
         self._clear_caches()
-        
+
     def __repr__(self):
         tree = _table_tree(self.tables)
         swaps = f"  swaps: {len(self.swaps)} entries" if self.swaps else "  swaps: ()"
