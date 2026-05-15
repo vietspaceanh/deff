@@ -166,6 +166,7 @@ def validate_bare_refs(query: Query) -> None:
 
 
 def sql(query, name=TMP_TABLE_NAME):
+    """Eagerly execute an SQL query and return a Table object."""
     if isinstance(query, Table):
         query.get()
         return query
