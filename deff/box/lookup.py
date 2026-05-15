@@ -48,7 +48,7 @@ def lateral_join_lookup(
     window_ranges,
 ):
     aggs = get_aggs(stats, window_ranges)
-    select, where = aggs.as_lateral(partition_by, snap_ob, _ALIAS_BASE, _ALIAS_LOOKUP)
+    select, where = aggs.as_lateral(partition_by, order_by=snap_ob, left_tbl=_ALIAS_BASE, right_tbl=_ALIAS_LOOKUP)
     inner_select = "\n".join(f"{line}" for line in select.split("\n"))
 
     partition_cols = ", ".join(partition_by) if partition_by else None

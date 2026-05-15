@@ -43,7 +43,7 @@ class AggregationSpecs:
                 parts.append(formula)
         return ",\n".join(parts)
 
-    def as_window(self, partition_by, order_by):
+    def as_window(self, partition_by=None, order_by=None):
         parts = []
         for formula, alias in self.stats:
             over = (
@@ -55,7 +55,7 @@ class AggregationSpecs:
                     suffix = window_suffix(wr)
                     full_alias = f"{alias}_{suffix}" if alias else suffix
                     parts.append(
-                        f'{formula} over ( {over}{parse_window_range(wr)} ) AS "{full_alias}"'
+                        f'{formula} over ( {over.strip()} {parse_window_range(wr)} ) AS "{full_alias}"'
                     )
             else:
                 parts.append(
@@ -68,7 +68,7 @@ class AggregationSpecs:
             raise ValueError("window_ranges required for as_filtered")
         return self._build_filter_exprs(f"TIMESTAMP '{ref}'", order_by)
 
-    def as_lateral(self, partition_by, order_by, left_tbl="left_table", right_tbl="right_table"):
+    def as_lateral(self, partition_by=None, *, order_by, left_tbl="left_table", right_tbl="right_table"):
         if not self.window_ranges:
             raise ValueError("window_ranges required for as_lateral")
 
