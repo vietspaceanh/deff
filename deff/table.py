@@ -55,7 +55,7 @@ class Table:
 
     @property
     def graph(self):
-        print(generate_mermaid_code(self.spec))
+        return generate_mermaid_code(self.spec)
 
     @property
     def df(self):

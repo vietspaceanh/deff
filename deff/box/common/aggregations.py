@@ -44,19 +44,22 @@ class AggregationSpecs:
         return ",\n".join(parts)
 
     def as_window(self, partition_by, order_by):
-        if not self.window_ranges:
-            raise ValueError("window_ranges required for as_window")
         parts = []
         for formula, alias in self.stats:
-            for wr in self.window_ranges:
-                over = (
-                    f"partition by {','.join(partition_by)} " if partition_by else ""
-                )
-                over += f"order by {order_by} " if order_by else ""
-                suffix = window_suffix(wr)
-                full_alias = f"{alias}_{suffix}" if alias else suffix
+            over = (
+                f"partition by {','.join(partition_by)} " if partition_by else ""
+            )
+            over += f"order by {order_by} " if order_by else ""
+            if self.window_ranges:
+                for wr in self.window_ranges:
+                    suffix = window_suffix(wr)
+                    full_alias = f"{alias}_{suffix}" if alias else suffix
+                    parts.append(
+                        f'{formula} over ( {over}{parse_window_range(wr)} ) AS "{full_alias}"'
+                    )
+            else:
                 parts.append(
-                    f'{formula} over ( {over}{parse_window_range(wr)} ) AS "{full_alias}"'
+                    f'{formula} over ( {over.strip()} ) AS "{alias}"'
                 )
         return ",\n".join(parts)
 
@@ -106,5 +109,5 @@ class AggregationSpecs:
         return conds
 
 
-def get_aggs(stats, window_ranges=None):
+def get_aggs(stats: list[tuple[str, str]], window_ranges: list[tuple[str, str]] | None = None):
     return AggregationSpecs(stats, window_ranges)
