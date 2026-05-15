@@ -17,14 +17,14 @@ DARK_COLORS = {
     "highlighted_border": "#589bffb8",
 }
 LIGHT_COLORS = {
-    "numeric": "#1e66f5",
-    "string": "#40a02b",
-    "boolean": "#fe640b",
-    "temporal": "#8839ef",
-    "badge_bg": "#e6e9ef",
-    "border": "#ccd0da",
-    "default": "#6c6f85",
-    "highlighted_border": "#1e66f580",
+    "numeric": "#1c4ed8",
+    "string": "#2d7a1e",
+    "boolean": "#d95b0a",
+    "temporal": "#6d28d9",
+    "badge_bg": "#d0d4dd",
+    "border": "#d0d4dd",
+    "default": "#4f5368",
+    "highlighted_border": "#1c4ed880",
 }
 
 NUMERIC = ("INTEGER", "BIGINT", "HUGEINT", "SMALLINT", "TINYINT", "FLOAT", "DOUBLE", "DECIMAL")
