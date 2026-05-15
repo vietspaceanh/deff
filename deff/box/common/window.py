@@ -1,6 +1,10 @@
 UNIT_ABBR = {'week': 'w', 'weeks': 'w', 'month': 'mo', 'months': 'mo',
              'day': 'd', 'days': 'd', 'hour': 'h', 'hours': 'h',
-             'year': 'y', 'years': 'y'}
+             'year': 'y', 'years': 'y',
+             'quarter': 'q', 'quarters': 'q',
+             'minute': 'min', 'minutes': 'min',
+             'second': 's', 'seconds': 's',
+             'millisecond': 'ms', 'milliseconds': 'ms'}
 
 
 def parse_duration(duration: str) -> tuple[int, str]:
@@ -11,9 +15,15 @@ def parse_duration(duration: str) -> tuple[int, str]:
 
 
 def abbr_duration(duration: str) -> str:
-    """'last 7 days' → '7d'   'next 30 days' → '30d'"""
-    num, unit = parse_duration(duration)
-    return f"{num}{UNIT_ABBR.get(unit + 's', unit[0])}"
+    """'last 7 days' → '7d'   '3 months 1 week' → '3mo_1w'"""
+    s = duration.strip().removeprefix("last ").removeprefix("next ")
+    parts = s.split()
+    abbrs = []
+    for i in range(0, len(parts), 2):
+        num = parts[i]
+        unit = parts[i + 1].rstrip("s")
+        abbrs.append(f"{num}{UNIT_ABBR.get(unit + 's', unit[0])}")
+    return "_".join(abbrs)
 
 
 def widest_bounds(window_ranges):
@@ -97,6 +107,8 @@ def build_window(order_by, partition_by=None, frame=None):
 
 def window_suffix(spec):
     start, end = _normalize_window_range(spec)
+    if not start and not end:
+        raise ValueError(f"Invalid window range spec: {spec!r}")
     if start and not end:
         tag = 'last' if start.startswith('last ') else 'next'
         return f"{tag}_{abbr_duration(start)}"
@@ -127,12 +139,20 @@ def _interval_days(s):
         unit = tokens[i + 1]
         if unit in ("month", "months"):
             total += num * 31
+        elif unit in ("quarter", "quarters"):
+            total += num * 3 * 31
         elif unit in ("week", "weeks"):
             total += num * 7
         elif unit in ("day", "days"):
             total += num
         elif unit in ("hour", "hours"):
             total += num / 24
+        elif unit in ("minute", "minutes"):
+            total += num / 1440
+        elif unit in ("second", "seconds"):
+            total += num / 86400
+        elif unit in ("millisecond", "milliseconds"):
+            total += num / 86400000
     return total
 
 
