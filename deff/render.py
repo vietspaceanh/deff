@@ -1,31 +1,9 @@
 from __future__ import annotations
 
-import os
-
 from . import config
 from .specs import TableSpec, flatten_ctes
 from .runtime import runtime, Graph
-
-DARK_COLORS = {
-    "numeric": "#89b4fa",
-    "string": "#8ee087",
-    "boolean": "#fab387",
-    "temporal": "#b4befe",
-    "badge_bg": "#313244",
-    "border": "#45475a",
-    "default": "#555555",
-    "highlighted_border": "#589bffb8",
-}
-LIGHT_COLORS = {
-    "numeric": "#1c4ed8",
-    "string": "#2d7a1e",
-    "boolean": "#d95b0a",
-    "temporal": "#6d28d9",
-    "badge_bg": "#d0d4dd",
-    "border": "#d0d4dd",
-    "default": "#4f5368",
-    "highlighted_border": "#1c4ed880",
-}
+from .theme import resolve_colors, deff_theme, PRESET_FACTORIES
 
 NUMERIC = ("INTEGER", "BIGINT", "HUGEINT", "SMALLINT", "TINYINT", "FLOAT", "DOUBLE", "DECIMAL")
 TEMPORAL = ("DATE", "TIMESTAMP", "TIMESTAMP WITH TIME ZONE", "TIME", "INTERVAL")
@@ -50,13 +28,13 @@ def result_to_html(result, max_rows) -> str:
     cols, types, rows, truncated = _extract_preview(result, max_rows)
     roles = [TYPE_ROLES.get(t, "default") for t in types]
     html = _build_html_style()
-    html += '<div style="max-height:400px;overflow-y:auto"><table class="deff-tbl"><thead><tr>'
+    html += '<div class="deff-wrap" style="max-height:400px;overflow-y:auto"><table class="deff-tbl"><thead><tr>'
     for col, t, r in zip(cols, types, roles):
         html += f'<th>{col}<br><span class="deff-tbl-badge" style="color:var(--c-{r})">{t}</span></th>'
     html += "</tr></thead><tbody>"
     for row in rows:
         html += "<tr>" + "".join(
-            f'<td style="color:var(--c-{roles[i]})"><div>{_truncate_cell(v)}</div></td>'
+            f'<td style="color:var(--c-{roles[i]})">{_truncate_cell(v)}</td>'
             for i, v in enumerate(row)
         ) + "</tr>"
     html += "</tbody></table></div>"
@@ -71,7 +49,7 @@ def result_to_rich(result, max_rows):
     import rich.table as rt
     from rich.text import Text
 
-    colors = _resolve_colors()
+    colors = resolve_colors()
     cols, types, rows, truncated = _extract_preview(result, max_rows)
 
     table = rt.Table()
@@ -101,7 +79,7 @@ def result_to_rich(result, max_rows):
 
 
 def generate_mermaid_code(table_spec: TableSpec) -> str:
-    colors = _resolve_colors()
+    colors = resolve_colors()
     ctx = runtime.graph(table_spec)
     target = table_spec.name
     lines = ["graph TD"]
@@ -294,41 +272,40 @@ def _close_subgraph(
 
 # ────────────────────────────────── Theming ───────────────────────────────── #
 
-def _resolve_colors() -> dict[str, str]:
-    theme = config.theme
-    if theme == "dark":
-        return DARK_COLORS
-    if theme == "light":
-        return LIGHT_COLORS
-
-    colorfgbg = os.environ.get("COLORFGBG", "")
-    if colorfgbg.endswith(";0"):
-        return DARK_COLORS
-    if colorfgbg.endswith(";15"):
-        return LIGHT_COLORS
-
-    if os.environ.get("DARK_BACKGROUND") == "1":
-        return DARK_COLORS
-
-    return DARK_COLORS
-
 
 def _build_html_style() -> str:
     def block(colors):
-        return "".join(f"--c-{k}:{v};" for k, v in colors.items())
+        return "".join(f"--c-{k.replace('_', '-')}:{v};" for k, v in colors.items())
 
-    l, d = block(LIGHT_COLORS), block(DARK_COLORS)
-    return (
-        "<style>"
-        f".deff-tbl{{{l}border-collapse:separate}}"
-        f"@media(prefers-color-scheme:dark){{.deff-tbl{{{d}}}}}"
-        f'body[data-jp-theme-light="true"] .deff-tbl{{{l}}}'
-        f'body[data-jp-theme-light="false"] .deff-tbl{{{d}}}'
-        f"body.vscode-light .deff-tbl{{{l}}}"
-        f"body.vscode-dark .deff-tbl,body.vscode-high-contrast .deff-tbl{{{d}}}"
-        ".deff-tbl th{text-align:center;position:sticky;top:0;z-index:1;backdrop-filter:blur(24px);background:rgba(128,128,128,0.04);border-right:1px solid var(--c-border)}"
-        ".deff-tbl td{border-right:1px solid var(--c-border);min-width:10ch}"
-        ".deff-tbl td>div{max-height:200px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--c-border) transparent}"
+    cfg = deff_theme.config
+    themed = resolve_colors()
+    if not themed:
+        return ""
+
+    vars_block = block(themed)
+    if cfg.mode == "auto":
+        l = block(resolve_colors(PRESET_FACTORIES["light"]()))
+        d = block(resolve_colors(PRESET_FACTORIES["dark"]()))
+        style = (
+            "<style>"
+            f".deff-wrap{{{l}}}"
+            f"@media(prefers-color-scheme:dark){{.deff-wrap{{{d}}}}}"
+            f'body[data-jp-theme-light="true"] .deff-wrap{{{l}}}'
+            f'body[data-jp-theme-light="false"] .deff-wrap{{{d}}}'
+            f"body.vscode-light .deff-wrap{{{l}}}"
+            f"body.vscode-dark .deff-wrap,body.vscode-high-contrast .deff-wrap{{{d}}}"
+        )
+    else:
+        style = (
+            "<style>"
+            f".deff-wrap{{{vars_block}}}"
+        )
+
+    return style + (
+        ".deff-tbl{border-collapse:separate}"
+        ".deff-wrap{overflow-y:auto;contain:layout paint;scrollbar-color:rgba(128,128,128,0.35) var(--c-badge-bg)}"
+        ".deff-tbl th{border:none;border-right:1px solid rgba(128,128,128,0.2);text-align:center;position:sticky;top:0;z-index:1;backdrop-filter:blur(24px);background:rgba(128,128,128,0.04)}"
+        ".deff-tbl td{border:none;border-right:1px solid rgba(128,128,128,0.2);min-width:10ch}"
         ".deff-tbl-badge{font-size:0.75em;background:var(--c-badge-bg);padding:1px 5px;border-radius:3px;font-weight:500}"
         "</style>"
     )

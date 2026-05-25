@@ -108,8 +108,9 @@ class ThemeService:
 deff_theme = ThemeService()
 
 
-def resolve_colors() -> dict[str, str]:
-    cfg = deff_theme.config
+def resolve_colors(cfg: ThemeConfig | None = None) -> dict[str, str]:
+    if cfg is None:
+        cfg = deff_theme.config
     p = cfg.proxy
     if not p:
         return {}

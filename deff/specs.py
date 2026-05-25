@@ -45,7 +45,7 @@ class Query:
     def _clean_sql(sql: str) -> str:
         """Normalize SQL: strip '--sql' header, dedent, remove trailing semicolon."""
         lines = sql.strip().split("\n")
-        if lines and lines[0].strip().startswith("--sql"):
+        if lines and lines[0].strip().startswith(("--sql", "sql")):
             lines = lines[1:]
         result = textwrap.dedent("\n".join(lines)).strip()
         if result.endswith(";"):
