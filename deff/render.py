@@ -28,7 +28,7 @@ def result_to_html(result, max_rows) -> str:
     cols, types, rows, truncated = _extract_preview(result, max_rows)
     roles = [TYPE_ROLES.get(t, "default") for t in types]
     html = _build_html_style()
-    html += '<div class="deff-wrap" style="max-height:400px;overflow-y:auto"><table class="deff-tbl"><thead><tr>'
+    html += '<div class="deff-wrap"><div class="deff-scroll" style="max-height:400px;overflow-y:auto"><table class="deff-tbl"><thead><tr>'
     for col, t, r in zip(cols, types, roles):
         html += f'<th>{col}<br><span class="deff-tbl-badge" style="color:var(--c-{r})">{t}</span></th>'
     html += "</tr></thead><tbody>"
@@ -37,7 +37,7 @@ def result_to_html(result, max_rows) -> str:
             f'<td style="color:var(--c-{roles[i]})">{_truncate_cell(v)}</td>'
             for i, v in enumerate(row)
         ) + "</tr>"
-    html += "</tbody></table></div>"
+    html += "</tbody></table></div></div>"
     if truncated:
         html += f"<em>... showing first {len(rows)} rows, {len(cols)} columns</em>"
     elif rows:
@@ -302,10 +302,12 @@ def _build_html_style() -> str:
         )
 
     return style + (
-        ".deff-tbl{border-collapse:separate}"
-        ".deff-wrap{overflow-y:auto;contain:layout paint;scrollbar-color:rgba(128,128,128,0.35) var(--c-badge-bg)}"
-        ".deff-tbl th{border:none;border-right:1px solid rgba(128,128,128,0.2);text-align:center;position:sticky;top:0;z-index:1;backdrop-filter:blur(24px);background:rgba(128,128,128,0.04)}"
-        ".deff-tbl td{border:none;border-right:1px solid rgba(128,128,128,0.2);min-width:10ch}"
-        ".deff-tbl-badge{font-size:0.75em;background:var(--c-badge-bg);padding:1px 5px;border-radius:3px;font-weight:500}"
+        ".deff-wrap .deff-tbl{border-collapse:separate;border-spacing:0;border:none;margin-top:0;border-radius:0}"
+        ".deff-wrap{overflow:hidden;contain:layout paint;border:1px solid var(--c-border);border-radius:var(--el-border-radius,14px)}"
+        ".deff-scroll{overflow-y:auto;scrollbar-color:rgba(128,128,128,0.35) var(--c-badge-bg)}"
+        ".deff-wrap .deff-tbl th{border:none;border-right:1px solid rgba(128,128,128,0.2);text-align:center;position:sticky;top:0;z-index:1;backdrop-filter:blur(24px);background:rgba(128,128,128,0.04)}"
+        ".deff-wrap .deff-tbl th:last-child,.deff-wrap .deff-tbl td:last-child{border-right:none}"
+        ".deff-wrap .deff-tbl td{border:none;border-right:1px solid rgba(128,128,128,0.2);border-bottom:1px solid rgba(128,128,128,0.2);min-width:10ch}"
+        ".deff-wrap .deff-tbl-badge{font-size:0.75em;background:var(--c-badge-bg);padding:1px 5px;border-radius:3px;font-weight:500}"
         "</style>"
     )
