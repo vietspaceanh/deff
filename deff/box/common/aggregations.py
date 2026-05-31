@@ -1,32 +1,7 @@
 import re
-
 from .window import build_window_condition, parse_window_range, window_suffix, widest_bounds
 
 _FILTER_RE = re.compile(r"\bFILTER\s*\(\s*(?:WHERE\s+)?", re.IGNORECASE)
-
-
-def _extract_filter(formula):
-    m = _FILTER_RE.search(formula)
-    if not m:
-        return formula, None
-
-    start = m.start()
-    pos = m.end()
-    depth = 1
-    while depth and pos < len(formula):
-        if formula[pos] == '(':
-            depth += 1
-        elif formula[pos] == ')':
-            depth -= 1
-        pos += 1
-    if depth:
-        return formula, None
-
-    cleaned = (formula[:start] + formula[pos:]).strip()
-    cond = formula[m.end():pos-1].strip()
-    if cond.upper().startswith("WHERE"):
-        cond = cond[5:].strip()
-    return cleaned, cond
 
 
 class AggregationSpecs:
@@ -37,10 +12,7 @@ class AggregationSpecs:
     def as_plain(self):
         parts = []
         for formula, alias in self.stats:
-            if alias:
-                parts.append(f'{formula} AS "{alias}"')
-            else:
-                parts.append(formula)
+            parts.append(_make_sure_nan_to_null(formula, alias))
         return ",\n".join(parts)
 
     def as_window(self, partition_by=None, order_by=None):
@@ -54,13 +26,11 @@ class AggregationSpecs:
                 for wr in self.window_ranges:
                     suffix = window_suffix(wr)
                     full_alias = f"{alias}_{suffix}" if alias else suffix
-                    parts.append(
-                        f'{formula} over ( {over.strip()} {parse_window_range(wr)} ) AS "{full_alias}"'
-                    )
+                    expr = f'{formula} over ( {over.strip()} {parse_window_range(wr)} )'
+                    parts.append(_make_sure_nan_to_null(expr, full_alias))
             else:
-                parts.append(
-                    f'{formula} over ( {over.strip()} ) AS "{alias}"'
-                )
+                expr = f'{formula} over ( {over.strip()} )'
+                parts.append(_make_sure_nan_to_null(expr, alias))
         return ",\n".join(parts)
 
     def as_filtered(self, order_by, ref):
@@ -92,7 +62,8 @@ class AggregationSpecs:
                     cond = f"({user_filter}) AND {cond}"
                 suffix = window_suffix(wr)
                 full_alias = f"{alias}_{suffix}" if alias else suffix
-                parts.append(f'{cleaned} FILTER (WHERE {cond}) AS "{full_alias}"')
+                expr = f'{cleaned} FILTER (WHERE {cond})'
+                parts.append(_make_sure_nan_to_null(expr, full_alias))
         return ",\n".join(parts)
 
     def _build_widest_conds(self, left_col, right_col):
@@ -111,3 +82,36 @@ class AggregationSpecs:
 
 def get_aggs(stats: list[tuple[str, str]], window_ranges: list[tuple[str, str]] | None = None):
     return AggregationSpecs(stats, window_ranges)
+
+
+def _make_sure_nan_to_null(expr: str, alias: str | None = None) -> str:
+    """Wrap expr so NaN → NULL. DuckDB functions like skewness/kurtosis return
+    IEEE 754 NaN when stddev=0, which crashes STDDEV_SAMP in SUMMARIZE etc."""
+    wrapped = f"IF(isnan({expr}), NULL, {expr})"
+    if alias:
+        return f'{wrapped} AS "{alias}"'
+    return wrapped
+
+
+def _extract_filter(formula):
+    m = _FILTER_RE.search(formula)
+    if not m:
+        return formula, None
+
+    start = m.start()
+    pos = m.end()
+    depth = 1
+    while depth and pos < len(formula):
+        if formula[pos] == '(':
+            depth += 1
+        elif formula[pos] == ')':
+            depth -= 1
+        pos += 1
+    if depth:
+        return formula, None
+
+    cleaned = (formula[:start] + formula[pos:]).strip()
+    cond = formula[m.end():pos-1].strip()
+    if cond.upper().startswith("WHERE"):
+        cond = cond[5:].strip()
+    return cleaned, cond
