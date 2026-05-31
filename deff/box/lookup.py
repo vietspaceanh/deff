@@ -65,7 +65,7 @@ def lateral_join_lookup(
         else f"{_ALIAS_BASE}.{snap_ob},"
     )
 
-    return f"""--sql
+    return f"""sql
     WITH _src AS (
         SELECT * FROM {lookup}
         ORDER BY {order_clause}
@@ -102,7 +102,7 @@ def groupby_lookup(
 
     on_conds = [f"{_ALIAS_LOOKUP}.{col} = {_ALIAS_BASE}.{col}" for col in partition_by]
 
-    return f"""--sql
+    return f"""sql
     SELECT
         {',\n'.join(select_parts)}
     FROM {base} {_ALIAS_BASE}
